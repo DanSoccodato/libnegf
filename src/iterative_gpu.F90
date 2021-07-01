@@ -517,7 +517,7 @@ contains
 
     !Work
     type(CublasHandle) :: hh
-    Type(c_DNS) :: Gam, GA
+    Type(c_DNS) :: Gam
     type(c_DNS) :: work1, work2, work3
     integer :: i,j
     integer :: cb, nbl, ncont, istat
@@ -545,7 +545,6 @@ contains
 
           ! Computation of Gn(cb,cb) = Gr(cb,cb) Gam(cb) Gr(cb,cb)^+
           call createAll(work1, Gam%nrow, Gr(cb,cb)%nrow) !it's Gr^+ --> I take nrow
-          call createAll(GA, Gr(cb,cb)%ncol, Gr(cb,cb)%nrow)
           call matmul_gpu(hh, frmdiff, Gam, Gr(cb,cb), zero, work1, 'dag_2nd')
           call matmul_gpu(hh, one, Gr(cb,cb), work1, zero, Gn(cb,cb))
           call destroyAll(work1)
@@ -609,7 +608,6 @@ contains
              !Gn(i-1,i)  = Gr(i-1, cb) Gam(cb) Gr(i, cb)^+
              call matmul_gpu(hh, frmdiff, Gr(i-1,cb), work2, zero, Gn(i-1,i))
              call destroyAll(work2)
-             call destroyAll(GA)
 
              !Gn(i,i-1)  = Gr(i, cb) Gam(cb) Gr(i-1, cb)^+
              call createAll(work3, Gam%nrow, Gr(i-1,cb)%nrow)
@@ -644,7 +642,7 @@ contains
 
     !Work
     type(CublasHandle) :: hh
-    Type(z_DNS) :: Gam, GA
+    Type(z_DNS) :: Gam
     type(z_DNS) :: work1, work2, work3
     integer :: i, j, istat
     integer :: cb, nbl, ncont
@@ -673,7 +671,6 @@ contains
 
           ! Computation of Gn(cb,cb) = Gr(cb,cb) Gam(cb) Gr(cb,cb)^+
           call createAll(work1, Gam%nrow, Gr(cb,cb)%nrow) !it's Gr^+ --> I take nrow
-          call createAll(GA, Gr(cb,cb)%ncol, Gr(cb,cb)%nrow)
           call matmul_gpu(hh, frmdiff, Gam, Gr(cb,cb), zero, work1, 'dag_2nd')
           call matmul_gpu(hh, one, Gr(cb,cb), work1, zero, Gn(cb,cb))
           call destroyAll(work1)
@@ -731,7 +728,7 @@ contains
 
              !Gn(i, i) = Gr(i, cb) Gam(cb) Gr(i, cb)^+
              call createAll(work2, Gam%nrow, Gr(i,cb)%nrow)
-             call matmul_gpu(hh, one, Gam, GA, zero, work2, 'dag_2nd')
+             call matmul_gpu(hh, one, Gam, Gr(i,cb), zero, work2, 'dag_2nd')
              call matmul_gpu(hh, frmdiff, Gr(i,cb), work2, zero, Gn(i,i))
 
              !Gn(i-1,i)  = Gr(i-1, cb) Gam(cb) Gr(i, cb)^+

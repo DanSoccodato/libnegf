@@ -2965,7 +2965,9 @@ CONTAINS
        call calculate_gsmr_blocks(negf,ESH,nbl,2,gsmr,.false.)
        call allocate_blk_dns(Gr,nbl)
        call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,1)
-       
+#:if defined("GPU")
+       call copy_trid_toHOST(Gr)
+#:endif
        call calculate_single_transmission_2_contacts(negf,nit,nft,ESH,SelfEneR,str%cblk,tun_proj,Gr,tun)
        tun_mat(1) = tun
 
@@ -3004,6 +3006,9 @@ CONTAINS
              endif
           endif
 
+#:if defined("GPU")
+       call copy_trid_toHOST(Gr)
+#:endif
           call calculate_single_transmission_N_contacts(negf,nit,nft,ESH,SelfEneR,str%cblk,tun_proj,gsmr,Gr,tun)
           tun_mat(icpl) = tun
 
@@ -3067,6 +3072,9 @@ CONTAINS
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,1)
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,2,nbl)
     !Computation of transmission(s) between contacts ni(:) -> nf(:)
+#:if defined("GPU")
+       call copy_trid_toHOST(Gr)
+#:endif
     do icpl=1,size(ni)
 
        nit=ni(icpl)
@@ -3090,7 +3098,7 @@ CONTAINS
 
     !Distruzione dei blocchi fuori-diagonale
 #:if defined("GPU")    
-    call copy_trid_toHOST(Gr) 
+    !call copy_trid_toHOST(Gr) 
     do i=2,nbl
       call destroyAll(Gr(i-1,i))
       call destroyAll(Gr(i,i-1))
@@ -3410,22 +3418,13 @@ CONTAINS
     call zspectral(SelfEneR(ct1),SelfEneR(ct1),0,GAM1_dns)
     call zspectral(SelfEneR(ct2),SelfEneR(ct2),0,GAM2_dns)
 
-         write(*,*) '~-~-~-~-~-~-~-~-~-~-~-~-~-~-'
-         write(*,*) 'N_conts: TRS= GAM2 * Gr(bl2,bl1)* GAM1 * Gr(bl2,bl1)^+'
-         write(*,*) 'N_conts: sum_GAM1_dns=', sum(ABS(GAM1_dns%val))
-         write(*,*) 'N_conts: sum_Gr(',bl2,bl1,')=', sum(ABS(Gr(bl2,bl1)%val))
-         write(*,*) ''
-
     ! Work to compute transmission matrix (Gamma2 Gr Gamma1 Ga)
     call prealloc_mult(GAM2_dns,Gr(bl2,bl1),work1)
-         write(*,*) 'N_conts: sum_GAM2_dns=', sum(ABS(GAM2_dns%val))
 
     call destroy(GAM2_dns)
 
     call prealloc_mult(work1,GAM1_dns,work2)
 
-         write(*,*) 'N_conts: sum_work1=', sum(ABS(work1%val))
-         write(*,*) 'N_conts: sum_work2', sum(ABS(work2%val))
     call destroy(work1)
 
     call destroy(GAM1_dns)
@@ -3435,7 +3434,6 @@ CONTAINS
     if (bl2.gt.bl1+1) call destroy( Gr(bl2,bl1) )
 
     call prealloc_mult(work2,GA,TRS)
-       write(*,*) 'N_conts: sum_TRS=', sum(ABS(TRS%val))
 
     call destroy(work2)
 
@@ -3444,7 +3442,6 @@ CONTAINS
     call get_tun_mask(ESH, bl2, tun_proj, tun_mask)
 
     TUN = abs( real(trace(TRS, tun_mask)) )
-       write(*,*) 'N_conts: TUN=', TUN
     call log_deallocate(tun_mask)
 
     call destroy(TRS)
