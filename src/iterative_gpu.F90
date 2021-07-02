@@ -18,6 +18,8 @@ module iterative_gpu
   public :: calculate_gsml_blocks
   public :: calculate_Gr_tridiag_blocks
   public :: calculate_Gn_tridiag_blocks
+  public :: calculate_single_transmission_2_contacts
+  public :: calculate_single_transmission_N_contacts
   public :: build_ESH_onGPU 
 
   interface calculate_gsmr_blocks
@@ -40,11 +42,26 @@ module iterative_gpu
      module procedure calculate_Gn_tridiag_blocks_dp
   end interface calculate_Gn_tridiag_blocks
 
+  interface calculate_single_transmission_2_contacts
+     module procedure calculate_single_transmission_2_contacts_sp
+     module procedure calculate_single_transmission_2_contacts_dp
+  end interface calculate_single_transmission_2_contacts
+
+  interface calculate_single_transmission_N_contacts
+     module procedure calculate_single_transmission_N_contacts_sp
+     module procedure calculate_single_transmission_N_contacts_dp
+  end interface calculate_single_transmission_N_contacts
+
   interface build_ESH_onGPU 
 !     module procedure build_ESH_onGPU_sp 
      module procedure build_ESH_onGPU_dp
   end interface build_ESH_onGPU 
   
+  interface get_tun_mask 
+     module procedure get_tun_mask_sp 
+     module procedure get_tun_mask_dp
+  end interface get_tun_mask 
+
 contains
 
   subroutine calculate_gsmr_blocks_sp(negf,ESH,sbl,ebl,gsmr,keepall)
@@ -755,6 +772,367 @@ contains
 
   end subroutine calculate_Gn_tridiag_blocks_dp
 
+  subroutine calculate_single_transmission_2_contacts_sp(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,Gr,TUN)
+    type(Tnegf), intent(in) :: negf 
+    integer, intent(in) :: ni,nf
+    type(c_DNS), intent(in) :: SelfEneR(MAXNCONT)
+    type(c_DNS), intent(in) :: ESH(:,:)
+    integer, intent(in) :: cblk(:)
+    type(intarray), intent(in) :: tun_proj
+    type(c_DNS), dimension(:,:), intent(in) :: Gr
+    real(sp), intent(out) :: TUN
+
+    !Work variables
+    type(CublasHandle) :: hh
+    Integer :: ct1, bl1
+    logical, dimension(:), allocatable :: tun_mask
+    Type(c_DNS) :: work1, work2, GAM1_dns, GA, TRS, AA
+    complex(sp), parameter :: j = (0.0_sp,1.0_sp)  ! CMPX unity
+    complex(sp), parameter :: mj = (0.0_sp,-1.0_sp) 
+    complex(sp), parameter :: one = (1.0_sp, 0.0_sp)
+    complex(sp), parameter :: mone = (-1.0_sp, 0.0_sp)
+    complex(sp), parameter :: zero = (0.0_sp, 0.0_sp)
+
+    if (size(cblk).gt.2) then
+       write(*,*) "ERROR: calculate_single_transmission_2_contacts is valid only for 2 contacts"
+       TUN = 0.0_sp
+       return
+    endif
+
+    hh = negf%hcublas
+
+    !Arrange contacts in way that order between first and second is always the
+    !same (always ct1 < ct2)
+
+    if (cblk(ni).lt.cblk(nf)) then
+       ct1=ni;
+    else
+       ct1=nf;
+    endif
+
+    bl1=cblk(ct1);
+
+    ! Computes the Gamma matrices
+    call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
+    call spectral_gpu(hh, SelfEneR(ct1),GAM1_dns)
+
+    ! Work to compute transmission matrix (Gamma G Gamma G)
+    call createAll(work1, GAM1_dns%nrow, Gr(bl1,bl1)%ncol)
+    call createAll(work2, work1%nrow, GAM1_dns%ncol)
+    call matmul_gpu(hh, one, GAM1_dns, Gr(bl1,bl1), zero, work1)
+    call matmul_gpu(hh, one, work1, GAM1_dns, zero, work2)
+
+    call destroyAll(work1)
+
+    call createAll(work1, work2%nrow, Gr(bl1,bl1)%nrow)
+    call matmul_gpu(hh, one, work2, Gr(bl1,bl1), zero, work1,'dag_2nd')
+    call destroyAll(work2)
+
+    call createAll(AA, Gr(bl1,bl1)%ncol, Gr(bl1,bl1)%nrow)
+    call matsum_gpu(hh, j, Gr(bl1,bl1), mj, Gr(bl1,bl1), AA, 'dag_2nd')
+
+    call createAll(work2, GAM1_dns%nrow, AA%ncol)
+    call matmul_gpu(hh, one, GAM1_dns, AA, zero, work2)
+    call destroyAll(GAM1_dns)
+    call destroyAll(AA)
+
+    call createAll(TRS, work1%nrow, work1%ncol)
+    call matsum_gpu(hh, one, work2, mone, work1, TRS)
+
+    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
+    call trace_gpu(hh, TRS, TUN, tun_mask)
+    call log_deallocate(tun_mask)
+
+    call destroyAll(TRS)
+    call destroyAll(work1)
+    call destroyAll(work2)
+  
+  end subroutine calculate_single_transmission_2_contacts_sp
+
+  subroutine calculate_single_transmission_2_contacts_dp(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,Gr,TUN)
+    type(Tnegf), intent(in) :: negf 
+    integer, intent(in) :: ni,nf
+    type(z_DNS), intent(in) :: SelfEneR(MAXNCONT)
+    type(z_DNS), intent(in) :: ESH(:,:)
+    integer, intent(in) :: cblk(:)
+    type(intarray), intent(in) :: tun_proj
+    type(z_DNS), dimension(:,:), intent(in) :: Gr
+    real(dp), intent(out) :: TUN
+
+    !Work variables
+    type(CublasHandle) :: hh
+    Integer :: ct1, bl1
+    logical, dimension(:), allocatable :: tun_mask
+    Type(z_DNS) :: work1, work2, GAM1_dns, GA, TRS, AA
+    complex(dp), parameter :: j = (0.0_dp,1.0_dp)  ! CMPX unity
+    complex(dp), parameter :: mj = (0.0_dp,-1.0_dp) 
+    complex(dp), parameter :: one = (1.0_dp, 0.0_dp)
+    complex(dp), parameter :: mone = (-1.0_dp, 0.0_dp)
+    complex(dp), parameter :: zero = (0.0_dp, 0.0_dp)
+    real(dp) :: summ
+
+    if (size(cblk).gt.2) then
+       write(*,*) "ERROR: calculate_single_transmission_2_contacts is valid only for 2 contacts"
+       TUN = 0.0_dp
+       return
+    endif
+
+    hh = negf%hcublas
+
+    !Arrange contacts in way that order between first and second is always the
+    !same (always ct1 < ct2)
+
+    if (cblk(ni).lt.cblk(nf)) then
+       ct1=ni;
+    else
+       ct1=nf;
+    endif
+
+    bl1=cblk(ct1);
+
+    ! Computes the Gamma matrices
+    call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
+    call spectral_gpu(hh, SelfEneR(ct1), GAM1_dns)
+
+    ! Work to compute transmission matrix (Gamma G Gamma G)
+    call createAll(work1, GAM1_dns%nrow, Gr(bl1,bl1)%ncol)
+    call createAll(work2, work1%nrow, GAM1_dns%ncol)
+    call matmul_gpu(hh, one, GAM1_dns, Gr(bl1,bl1), zero, work1)
+    call matmul_gpu(hh, one, work1, GAM1_dns, zero, work2)
+
+    call destroyAll(work1)
+
+    call createAll(work1, work2%nrow, Gr(bl1,bl1)%nrow)
+    call matmul_gpu(hh, one, work2, Gr(bl1,bl1), zero, work1,'dag_2nd')
+    call destroyAll(work2)
+
+    call createAll(AA, Gr(bl1,bl1)%ncol, Gr(bl1,bl1)%nrow)
+    call matsum_gpu(hh, j, Gr(bl1,bl1), mj, Gr(bl1,bl1), AA, 'dag_2nd')
+
+    call createAll(work2, GAM1_dns%nrow, AA%ncol)
+    call matmul_gpu(hh, one, GAM1_dns, AA, zero, work2)
+    call destroyAll(GAM1_dns)
+    call destroyAll(AA)
+
+    call createAll(TRS, work1%nrow, work1%ncol)
+    call matsum_gpu(hh, one, work2, mone, work1, TRS)
+       !call asum_gpu(hh, TRS, summ)
+       !print*, 'TRS= ', summ 
+       !call copyFromGPU(TRS)
+       !open(unit=37, file='/p/home/jusers/soccodato1/juwels/TRS.bin', status='replace', access='stream')
+       !write(37) TRS%val 
+       !close(37)
+       !print*, 'TRS%nrow= ', TRS%nrow
+       !print*, 'TRS%ncol= ', TRS%ncol
+    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
+    call trace_gpu(hh, TRS, TUN, tun_mask)
+       !print*, 'TUN= ', TUN
+    call log_deallocate(tun_mask)
+
+    call destroyAll(TRS)
+    call destroyAll(work1)
+    call destroyAll(work2)
+  
+  end subroutine calculate_single_transmission_2_contacts_dp
+
+  subroutine calculate_single_transmission_N_contacts_sp(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,gsmr,Gr,TUN)
+    type(Tnegf), intent(in) :: negf
+    integer, intent(in) :: ni,nf
+    type(c_DNS), intent(in) :: SelfEneR(MAXNCONT)
+    type(c_DNS), intent(in) :: ESH(:,:)
+    type(c_DNS), dimension(:),intent(in) :: gsmr
+    type(c_DNS), dimension(:,:),intent(in) :: Gr
+    integer, intent(in) :: cblk(:)
+    type(intarray), intent(in) :: tun_proj
+    real(sp), intent(out) :: TUN
+
+    !Work variables
+    type(CublasHandle) :: hh
+    Integer :: ct1, ct2, bl1, bl2, i, nbl
+    logical, dimension(:), allocatable :: tun_mask
+    Type(c_DNS) :: work1, work2, GAM1_dns, GAM2_dns, TRS
+    Real(sp) :: max
+    complex(sp), parameter :: one = (1.0_sp, 0.0_sp)
+    complex(sp), parameter :: mone = (-1.0_sp, 0.0_sp)
+    complex(sp), parameter :: zero = (0.0_sp, 0.0_sp)
+
+    !Arrange contacts in way that order between first and second is always the
+    !same (always ct1 < ct2)
+
+    if (cblk(ni).lt.cblk(nf)) then
+       ct1=ni;ct2=nf;
+    else
+       ct1=nf;ct2=ni;
+    endif
+
+    bl1=cblk(ct1); bl2=cblk(ct2);
+    nbl = size(cblk)
+    hh = negf%hcublas
+    ! in this way nt1 < nt2 by construction
+    if ( nbl.gt.1 .and. (bl2-bl1).gt.1) then
+
+       ! Compute column-blocks of Gr(i,bl1) up to i=bl2
+       ! Gr(i,bl1) = -gr(i) T(i,i-1) Gr(i-1,bl1)
+       do i = bl1+1, bl2
+          !Checks whether previous block is non null.
+          !If so next block is also null => TUN = 0
+          call copyFromGPU(Gr(i-1,bl1))
+          max=maxval(abs(Gr(i-1,bl1)%val))
+          
+          if (max.lt.EPS) then
+             TUN = EPS*EPS !for log plots
+             !Destroy also the block adjecent to diagonal since
+             !this is not deallocated anymore in calling subroutine
+             if (i.gt.(bl1+1)) call destroyAll(Gr(i-1,bl1))
+             return
+          endif
+
+          !Checks whether block has been created, if not do it
+          if (.not.allocated(Gr(i,bl1)%val)) then  
+
+             call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
+             call createAll(Gr(i,bl1), work1%nrow, Gr(i-1,bl1)%ncol)
+             call matmul_gpu(hh, mone, gsmr(i), ESH(i,i-1), zero, work1)
+             call matmul_gpu(hh, one, work1, Gr(i-1,bl1) ,zero, Gr(i,bl1))
+             call destroyAll(work1)
+
+          endif
+
+          ! avoid destroying blocks closer to diagonal
+          if (i.gt.(bl1+2)) call destroyAll(Gr(i-1,bl1))
+       end do
+
+    endif
+    ! Computes the Gamma matrices
+    call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
+    call createAll(GAM2_dns, SelfEneR(ct2)%nrow, SelfEneR(ct2)%ncol)
+    call spectral_gpu(hh, SelfEneR(ct1),GAM1_dns)
+    call spectral_gpu(hh ,SelfEneR(ct2),GAM2_dns)
+
+    ! Work to compute transmission matrix (Gamma2 Gr Gamma1 Ga)
+    call createAll(work1, Gr(bl2,bl1)%nrow, GAM1_dns%ncol)
+    call matmul_gpu(hh, one, Gr(bl2,bl1), GAM1_dns, zero, work1)
+
+    call createAll(work2, GAM2_dns%nrow, work1%ncol)
+    call matmul_gpu(hh, one, GAM2_dns, work1, zero, work2)
+
+    call destroyAll(work1)
+    call destroyAll(GAM2_dns)
+    call destroyAll(GAM1_dns)
+
+    call createAll(TRS, work2%nrow, Gr(bl2,bl1)%nrow)
+
+    call matmul_gpu(hh, one, work2, Gr(bl2,bl1), zero, TRS, 'dag_2nd')
+    call destroyAll(work2)
+    if (bl2.gt.bl1+1) call destroyAll(Gr(bl2,bl1))
+
+    call get_tun_mask(ESH, bl2, tun_proj, tun_mask)
+    call trace_gpu(hh, TRS, TUN, tun_mask) 
+    call log_deallocate(tun_mask)
+
+    call destroyAll(TRS)
+
+  end subroutine calculate_single_transmission_N_contacts_sp
+
+  subroutine calculate_single_transmission_N_contacts_dp(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,gsmr,Gr,TUN)
+    type(Tnegf), intent(in) :: negf
+    integer, intent(in) :: ni,nf
+    type(z_DNS), intent(in) :: SelfEneR(MAXNCONT)
+    type(z_DNS), intent(in) :: ESH(:,:)
+    type(z_DNS), dimension(:),intent(in) :: gsmr
+    type(z_DNS), dimension(:,:),intent(in) :: Gr
+    integer, intent(in) :: cblk(:)
+    type(intarray), intent(in) :: tun_proj
+    real(dp), intent(out) :: TUN
+
+    !Work variables
+    type(CublasHandle) :: hh
+    Integer :: ct1, ct2, bl1, bl2, i, nbl
+    logical, dimension(:), allocatable :: tun_mask
+    Type(z_DNS) :: work1, work2, GAM1_dns, GAM2_dns, TRS
+    Real(dp) :: max
+    complex(dp), parameter :: one = (1.0_dp, 0.0_dp)
+    complex(dp), parameter :: mone = (-1.0_dp, 0.0_dp)
+    complex(dp), parameter :: zero = (0.0_dp, 0.0_dp)
+
+    !Arrange contacts in way that order between first and second is always the
+    !same (always ct1 < ct2)
+
+    if (cblk(ni).lt.cblk(nf)) then
+       ct1=ni;ct2=nf;
+    else
+       ct1=nf;ct2=ni;
+    endif
+
+    bl1=cblk(ct1); bl2=cblk(ct2);
+    nbl = size(cblk)
+    hh = negf%hcublas
+    ! in this way nt1 < nt2 by construction
+    if ( nbl.gt.1 .and. (bl2-bl1).gt.1) then
+
+       ! Compute column-blocks of Gr(i,bl1) up to i=bl2
+       ! Gr(i,bl1) = -gr(i) T(i,i-1) Gr(i-1,bl1)
+       do i = bl1+1, bl2
+          !Checks whether previous block is non null.
+          !If so next block is also null => TUN = 0
+          call copyFromGPU(Gr(i-1,bl1))
+          max=maxval(abs(Gr(i-1,bl1)%val))
+          
+          if (max.lt.EPS) then
+             TUN = EPS*EPS !for log plots
+             !Destroy also the block adjecent to diagonal since
+             !this is not deallocated anymore in calling subroutine
+             if (i.gt.(bl1+1)) call destroyAll(Gr(i-1,bl1))
+             return
+          endif
+
+          !Checks whether block has been created, if not do it
+          if (.not.allocated(Gr(i,bl1)%val)) then  
+
+             call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
+             call createAll(Gr(i,bl1), work1%nrow, Gr(i-1,bl1)%ncol)
+             call matmul_gpu(hh, mone, gsmr(i), ESH(i,i-1), zero, work1)
+             call matmul_gpu(hh, one, work1, Gr(i-1,bl1) ,zero, Gr(i,bl1))
+             call destroyAll(work1)
+
+          endif
+
+          ! avoid destroying blocks closer to diagonal
+          if (i.gt.(bl1+2)) call destroyAll(Gr(i-1,bl1))
+       end do
+
+    endif
+    ! Computes the Gamma matrices
+    call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
+    call createAll(GAM2_dns, SelfEneR(ct2)%nrow, SelfEneR(ct2)%ncol)
+    call spectral_gpu(hh, SelfEneR(ct1),GAM1_dns)
+    call spectral_gpu(hh ,SelfEneR(ct2),GAM2_dns)
+
+    ! Work to compute transmission matrix (Gamma2 Gr Gamma1 Ga)
+    call createAll(work1, Gr(bl2,bl1)%nrow, GAM1_dns%ncol)
+    call matmul_gpu(hh, one, Gr(bl2,bl1), GAM1_dns, zero, work1)
+
+    call createAll(work2, GAM2_dns%nrow, work1%ncol)
+    call matmul_gpu(hh, one, GAM2_dns, work1, zero, work2)
+
+    call destroyAll(work1)
+    call destroyAll(GAM2_dns)
+    call destroyAll(GAM1_dns)
+
+    call createAll(TRS, work2%nrow, Gr(bl2,bl1)%nrow)
+
+    call matmul_gpu(hh, one, work2, Gr(bl2,bl1), zero, TRS, 'dag_2nd')
+    call destroyAll(work2)
+    if (bl2.gt.bl1+1) call destroyAll(Gr(bl2,bl1))
+
+    call get_tun_mask(ESH, bl2, tun_proj, tun_mask)
+    call trace_gpu(hh, TRS, TUN, tun_mask) 
+    call log_deallocate(tun_mask)
+
+    call destroyAll(TRS)
+
+  end subroutine calculate_single_transmission_N_contacts_dp
+
   subroutine build_ESH_onGPU_dp(negf, E, S, H, ESH)
     type(z_DNS), intent(inout), dimension(:,:) :: ESH
     type(z_DNS), intent(inout), dimension(:,:) :: S, H
@@ -793,5 +1171,112 @@ contains
     end do
 
   end subroutine build_ESH_onGPU_dp        
+
+!  subroutine build_ESH_onGPU_sp(negf, E, S, H, ESH)
+!    type(c_DNS), intent(inout), dimension(:,:) :: ESH
+!    type(c_DNS), intent(inout), dimension(:,:) :: S, H
+!    type(Tnegf), intent(in) :: negf
+!    complex(sp), intent(in) :: E
+!         
+!    type(c_CSR) :: H_csr, S_csr
+!    integer :: i, nbl
+!    type(cublasHandle) :: hh
+!    complex(sp), parameter :: one = (1.0_sp,0.0_sp )
+!    complex(sp), parameter :: mone = (-1.0_sp,0.0_sp )
+!
+!    nbl = negf%str%num_PLs
+!    H_csr = negf%H
+!    S_csr = negf%S
+!
+!    hh = negf%hcublas
+!
+!    call csr2blk_sod(H_csr, H, negf%str%mat_PL_start)
+!    call csr2blk_sod(S_csr, S, negf%str%mat_PL_start)
+!    call copy_trid_toGPU(S)
+!    call copy_trid_toGPU(H)
+!
+!    call createAll(ESH(1,1), S(1,1)%nrow, S(1,1)%ncol)
+!    call matsum_gpu(hh, E, S(1,1), mone, H(1,1), ESH(1,1))
+!
+!    do i=2,nbl
+!       call createAll(ESH(i,i), S(i,i)%nrow, S(i,i)%ncol)
+!       call matsum_gpu(hh,E,S(i,i), mone, H(i,i), ESH(i,i))
+!
+!       call createAll(ESH(i-1,i), S(i-1,i)%nrow, S(i-1,i)%ncol)
+!       call matsum_gpu(hh, E,S(i-1,i), mone, H(i-1,i), ESH(i-1,i))
+!
+!       call createAll(ESH(i,i-1), S(i,i-1)%nrow, S(i,i-1)%ncol)
+!       call matsum_gpu(hh, E,S(i,i-1), mone, H(i,i-1), ESH(i,i-1))
+!    end do
+!
+!  end subroutine build_ESH_onGPU_sp        
+
+  subroutine get_tun_mask_sp(ESH,nbl,tun_proj,tun_mask)
+    Type(c_DNS), intent(in) :: ESH(:,:)
+    integer, intent(in) :: nbl
+    type(intarray), intent(in) :: tun_proj
+    logical, intent(out), allocatable :: tun_mask(:)    
+
+    integer :: ii, istart, iend, ind
+
+    call log_allocate(tun_mask, ESH(nbl,nbl)%nrow)
+
+    if (allocated(tun_proj%indexes)) then
+       tun_mask = .false.
+
+       ! set the start/end indices of nbl
+       ! NB: istart has offset -1 to avoid +/-1 operations
+       istart = 0
+       do ii = 1, nbl-1
+          istart = istart + ESH(ii,ii)%nrow
+       end do
+       iend = istart + ESH(nbl,nbl)%nrow + 1  
+
+       ! select the indices in tun_proj 
+       do ii = 1, size(tun_proj%indexes)
+          ind = tun_proj%indexes(ii)
+          if (ind > istart .and. ind < iend) then
+             tun_mask(ind - istart) = .true. 
+          end if
+       end do
+    else
+       tun_mask = .true.
+    end if
+
+  end subroutine get_tun_mask_sp
+
+  subroutine get_tun_mask_dp(ESH,nbl,tun_proj,tun_mask)
+    Type(z_DNS), intent(in) :: ESH(:,:)
+    integer, intent(in) :: nbl
+    type(intarray), intent(in) :: tun_proj
+    logical, intent(out), allocatable :: tun_mask(:)    
+
+    integer :: ii, istart, iend, ind
+
+    call log_allocate(tun_mask, ESH(nbl,nbl)%nrow)
+
+    if (allocated(tun_proj%indexes)) then
+       tun_mask = .false.
+
+       ! set the start/end indices of nbl
+       ! NB: istart has offset -1 to avoid +/-1 operations
+       istart = 0
+       do ii = 1, nbl-1
+          istart = istart + ESH(ii,ii)%nrow
+       end do
+       iend = istart + ESH(nbl,nbl)%nrow + 1  
+
+       ! select the indices in tun_proj
+       do ii = 1, size(tun_proj%indexes)
+          ind = tun_proj%indexes(ii)
+          if (ind > istart .and. ind < iend) then
+             tun_mask(ind - istart) = .true. 
+          end if
+       end do
+    else
+       tun_mask = .true.
+    end if
+
+  end subroutine get_tun_mask_dp
 
 end module iterative_gpu

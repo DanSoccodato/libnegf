@@ -26,6 +26,7 @@ module cudautils
    public :: init_gpu
    public :: trace_gpu
    public :: copy_mat_gpu 
+   public :: asum_gpu 
  
    interface createGPU 
       module procedure createGPU_sp 
@@ -120,6 +121,11 @@ module cudautils
       module procedure copy_mat_gpu_sp 
       module procedure copy_mat_gpu_dp 
    end interface copy_mat_gpu 
+
+   interface asum_gpu 
+      module procedure asum_gpu_sp 
+      module procedure asum_gpu_dp 
+   end interface asum_gpu 
 
    integer, parameter :: REAL_SIZE=4
    integer, parameter :: COMPLEX_SIZE=2*REAL_SIZE
@@ -278,23 +284,26 @@ module cudautils
        integer(c_int), value :: nrow       
      end function cu_Zinitmat
 
-     real(c_float) function cu_Ctrace(hcublas, d_A, nrow) &
-     !integer(c_int) function cu_Ctrace(d_A, nrow, d_trace) &
+     real(c_float) function cu_Ctrace(hcublas, d_A, nrow, h_tun, mask_present) &
                   &   bind(C, name='cu_Ctrace')
        use iso_c_binding
        import cublasHandle
        type(cublasHandle), value :: hcublas
        type(c_ptr), value :: d_A
+       type(c_ptr), value :: h_tun 
        integer(c_int), value :: nrow       
+       integer(c_int), value :: mask_present 
      end function cu_Ctrace
 
-     real(c_double) function cu_Ztrace(hcublas, d_A, nrow) &
+     real(c_double) function cu_Ztrace(hcublas, d_A, nrow, h_tun, mask_present) &
                   &   bind(C, name='cu_Ztrace')
        use iso_c_binding
        import cublasHandle
        type(cublasHandle), value :: hcublas
        type(c_ptr), value :: d_A
+       type(c_ptr), value :: h_tun 
        integer(c_int), value :: nrow       
+       integer(c_int), value :: mask_present 
      end function cu_Ztrace
 
      integer(c_int) function cu_Cmatcopy(hcublas, d_A, d_B, msize) &
@@ -317,6 +326,26 @@ module cudautils
        integer(c_int), value :: msize 
      end function cu_Zmatcopy
 
+     integer(c_int) function cu_Casum(hcublas, d_A, summ, N) &
+                  &   bind(C, name='cu_Casum')
+       use iso_c_binding
+       import cublasHandle
+       type(cublasHandle), value :: hcublas
+       type(c_ptr), value :: d_A
+       real(c_float) :: summ
+       integer(c_int), value :: N 
+     end function cu_Casum
+
+     integer(c_int) function cu_Zasum(hcublas, d_A, summ, N) &
+                  &   bind(C, name='cu_Zasum')
+       use iso_c_binding
+       import cublasHandle
+       type(cublasHandle), value :: hcublas
+       type(c_ptr), value :: d_A
+       real(c_double) :: summ
+       integer(c_int), value :: N 
+     end function cu_Zasum
+
 end interface        
 
 
@@ -336,21 +365,18 @@ end interface
      type(c_DNS), intent(in), target :: A     
      integer :: err
      err = cu_copyMatH2D(c_loc(A%val), A%d_addr, size(A%val)*COMPLEX_SIZE)
-     print*, err
    end subroutine copyToGPU_sp  
    
    subroutine copyFromGPU_sp(A)
      type(c_DNS), intent(inout), target :: A     
      integer :: err
      err = cu_copyMatD2H(c_loc(A%val), A%d_addr, size(A%val)*COMPLEX_SIZE)
-     print*, err
    end subroutine copyFromGPU_sp  
    
    subroutine deleteGPU_sp(A)
      type(c_DNS), intent(inout) :: A     
      integer :: err
      err = cu_deleteMat(A%d_addr)
-     print*, err
    end subroutine deleteGPU_sp  
    
    subroutine createAll_sp(A, nrow, ncol)
@@ -379,21 +405,18 @@ end interface
      type(z_DNS), intent(in), target :: A     
      integer :: err
      err = cu_copyMatH2D(c_loc(A%val), A%d_addr, size(A%val)*DOUBLE_COMPLEX_SIZE)
-     print*, err
    end subroutine copyToGPU_dp  
    
    subroutine copyFromGPU_dp(A)
      type(z_DNS), intent(inout), target :: A     
      integer :: err
      err = cu_copyMatD2H(c_loc(A%val), A%d_addr, size(A%val)*DOUBLE_COMPLEX_SIZE)
-     print*, err
    end subroutine copyFromGPU_dp  
    
    subroutine deleteGPU_dp(A)
      type(z_DNS), intent(inout) :: A     
      integer :: err
      err = cu_deleteMat(A%d_addr)
-     print*, err
    end subroutine deleteGPU_dp  
    
    subroutine createAll_dp(A, nrow, ncol)
@@ -515,14 +538,19 @@ end interface
 
    end subroutine init_gpu_sp
 
-   subroutine trace_gpu_sp(hcublas, A, trace)
+   subroutine trace_gpu_sp(hcublas, A, trace, tun_mask)
       type(cublasHandle), intent(in) :: hcublas     
       type(c_DNS), intent(inout) :: A
       real(sp), intent(out) :: trace
+      logical, intent(in), optional, target :: tun_mask(:)
 
-      integer :: istat
-      
-      trace = cu_Ctrace(hcublas, A%d_addr, A%nrow)
+      type(c_ptr), value :: dummy
+
+      if (.not.present(tun_mask)) then
+         trace = cu_Ctrace(hcublas, A%d_addr, A%nrow, dummy, 0)
+      else
+         trace = cu_Ctrace(hcublas, A%d_addr, A%nrow, c_loc(tun_mask), 1)
+      endif
    
    end subroutine trace_gpu_sp
 
@@ -536,6 +564,17 @@ end interface
       istat = cu_Cmatcopy(hcublas, A%d_addr, Acopy%d_addr, A%nrow*A%ncol)
       
    end subroutine copy_mat_gpu_sp
+
+   subroutine asum_gpu_sp(hcublas, A, summ)
+      type(cublasHandle), intent(in) :: hcublas     
+      type(c_DNS), intent(inout) :: A
+      real(sp), intent(out) :: summ
+
+      integer :: istat
+
+      istat = cu_Casum(hcublas, A%d_addr, summ, A%nrow*A%ncol)
+      
+   end subroutine asum_gpu_sp 
 
    !-~-~-~-~ Double precision  ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
    subroutine matmul_gpu_dp(hcublas, alpha, A, B, beta, C, dagger)
@@ -639,14 +678,19 @@ end interface
 
    end subroutine init_gpu_dp
 
-   subroutine trace_gpu_dp(hcublas, A, trace)
+   subroutine trace_gpu_dp(hcublas, A, trace, tun_mask)
       type(cublasHandle), intent(in) :: hcublas     
       type(z_DNS), intent(inout) :: A
       real(dp), intent(out) :: trace
-
-      integer :: istat
+      logical, intent(in), optional, target :: tun_mask(:)
       
-      trace = cu_Ztrace(hcublas, A%d_addr, A%nrow)
+      type(c_ptr), value :: dummy     
+
+      if (.not.present(tun_mask)) then
+         trace = cu_Ztrace(hcublas, A%d_addr, A%nrow, dummy, 0)
+      else
+         trace = cu_Ztrace(hcublas, A%d_addr, A%nrow, c_loc(tun_mask), 1)
+      endif
    
    end subroutine trace_gpu_dp
 
@@ -661,6 +705,16 @@ end interface
       
    end subroutine copy_mat_gpu_dp
 
+   subroutine asum_gpu_dp(hcublas, A, summ)
+      type(cublasHandle), intent(in) :: hcublas     
+      type(z_DNS), intent(inout) :: A
+      real(dp), intent(out) :: summ
+
+      integer :: istat
+
+      istat = cu_Zasum(hcublas, A%d_addr, summ, A%nrow*A%ncol)
+      
+   end subroutine asum_gpu_dp 
 !~-~-~-~-~-~-~-~-~-~-~-~ MATRIX MOVEMENTS ROUTINES  ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
    !-~-~-~-~ Single precision  ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
   subroutine copy_trid_toGPU_sp(M)
@@ -701,8 +755,10 @@ end interface
 
     nbl = size(V)
     do ii=1,nbl
-       call createGPU(V(ii))
-       call copyToGPU(V(ii))
+       if(allocated(V(ii)%val)) then
+          call createGPU(V(ii))
+          call copyToGPU(V(ii))
+       endif
     end do
   end subroutine copy_vdns_toGPU_sp
 
@@ -712,7 +768,9 @@ end interface
 
     nbl = size(V)
     do ii=1,nbl
-       call deleteGPU(V(ii))
+       if(allocated(V(ii)%val)) then
+          call deleteGPU(V(ii))
+       endif
     end do
   end subroutine delete_vdns_fromGPU_sp
 
@@ -756,8 +814,10 @@ end interface
 
     nbl = size(V)
     do ii=1,nbl
-       call createGPU(V(ii))
-       call copyToGPU(V(ii))
+       if(allocated(V(ii)%val)) then
+          call createGPU(V(ii))
+          call copyToGPU(V(ii))
+       endif
     end do
   end subroutine copy_vdns_toGPU_dp
 
@@ -767,7 +827,9 @@ end interface
 
     nbl = size(V)
     do ii=1,nbl
-       call deleteGPU(V(ii))
+       if(allocated(V(ii)%val)) then
+          call deleteGPU(V(ii))
+       endif   
     end do
   end subroutine delete_vdns_fromGPU_dp
 end module cudautils

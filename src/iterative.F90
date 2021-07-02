@@ -2965,9 +2965,6 @@ CONTAINS
        call calculate_gsmr_blocks(negf,ESH,nbl,2,gsmr,.false.)
        call allocate_blk_dns(Gr,nbl)
        call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,1)
-#:if defined("GPU")
-       call copy_trid_toHOST(Gr)
-#:endif
        call calculate_single_transmission_2_contacts(negf,nit,nft,ESH,SelfEneR,str%cblk,tun_proj,Gr,tun)
        tun_mat(1) = tun
 
@@ -3006,9 +3003,6 @@ CONTAINS
              endif
           endif
 
-#:if defined("GPU")
-       call copy_trid_toHOST(Gr)
-#:endif
           call calculate_single_transmission_N_contacts(negf,nit,nft,ESH,SelfEneR,str%cblk,tun_proj,gsmr,Gr,tun)
           tun_mat(icpl) = tun
 
@@ -3072,9 +3066,6 @@ CONTAINS
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,1)
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,2,nbl)
     !Computation of transmission(s) between contacts ni(:) -> nf(:)
-#:if defined("GPU")
-       call copy_trid_toHOST(Gr)
-#:endif
     do icpl=1,size(ni)
 
        nit=ni(icpl)
@@ -3098,7 +3089,7 @@ CONTAINS
 
     !Distruzione dei blocchi fuori-diagonale
 #:if defined("GPU")    
-    !call copy_trid_toHOST(Gr) 
+    call copy_trid_toHOST(Gr) 
     do i=2,nbl
       call destroyAll(Gr(i-1,i))
       call destroyAll(Gr(i,i-1))
@@ -3272,216 +3263,7 @@ CONTAINS
   !  Useful only when there are 2 contacts
   !                ===================
   !************************************************************************
-  subroutine calculate_single_transmission_2_contacts(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,Gr,TUN)
-    type(Tnegf), intent(in) :: negf
-    integer, intent(in) :: ni,nf
-    type(z_DNS), intent(in) :: SelfEneR(MAXNCONT)
-    type(z_DNS), intent(in) :: ESH(:,:)
-    integer, intent(in) :: cblk(:)
-    type(intarray), intent(in) :: tun_proj
-    type(z_DNS), dimension(:,:), intent(in) :: Gr
-    real(dp), intent(out) :: TUN
 
-    !Work variables
-    Integer :: ct1, bl1
-    logical, dimension(:), allocatable :: tun_mask
-    Type(z_DNS) :: work1, work2, GAM1_dns, GA, TRS, AA
-    Complex(dp), parameter ::    j = (0.0_dp,1.0_dp)  ! CMPX unity
-
-    if (size(cblk).gt.2) then
-       write(*,*) "ERROR: calculate_single_transmission_2_contacts is valid only for 2 contacts"
-       TUN = 0.0_dp
-       return
-    endif
-
-    !Arrange contacts in way that order between first and second is always the
-    !same (always ct1 < ct2)
-
-    if (cblk(ni).lt.cblk(nf)) then
-       ct1=ni;
-    else
-       ct1=nf;
-    endif
-
-    bl1=cblk(ct1);
-
-    call zdagger(Gr(bl1,bl1),GA)
-
-    ! Computes the Gamma matrices
-    call zspectral(SelfEneR(ct1),SelfEneR(ct1),0,GAM1_dns)
-
-    ! Work to compute transmission matrix (Gamma G Gamma G)
-    call prealloc_mult(GAM1_dns,Gr(bl1,bl1),work1)
-
-    call prealloc_mult(work1,GAM1_dns,work2)
-
-    call destroy(work1)
-
-    call prealloc_mult(work2,GA,work1)
-
-    call destroy(work2)
-
-    call create(AA,GA%nrow,GA%ncol)
-
-    AA%val = j * (Gr(bl1,bl1)%val-GA%val)
-
-    call destroy(GA)
-
-    call prealloc_mult(GAM1_dns,AA,work2)
-
-    call destroy(GAM1_dns,AA)
-
-    call create(TRS,work1%nrow,work1%ncol)
-
-    TRS%val = work2%val - work1%val
-
-    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
-
-    TUN = abs( real(trace(TRS, tun_mask)) )
-
-    call log_deallocate(tun_mask)
-
-    call destroy(TRS,work1,work2)
-
-  end subroutine calculate_single_transmission_2_contacts
-
-  !************************************************************************
-  !
-  ! Subroutine for transmission calculation (GENERIC FOR N CONTACTS)
-  !
-  !************************************************************************
-  subroutine calculate_single_transmission_N_contacts(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,gsmr,Gr,TUN)
-    type(Tnegf), intent(in) :: negf
-    integer, intent(in) :: ni,nf
-    type(z_DNS), intent(in) :: SelfEneR(MAXNCONT)
-    type(z_DNS), intent(in) :: ESH(:,:)
-    type(z_DNS), dimension(:),intent(in) :: gsmr
-    type(z_DNS), dimension(:,:),intent(in) :: Gr
-    integer, intent(in) :: cblk(:)
-    type(intarray), intent(in) :: tun_proj
-    real(dp), intent(out) :: TUN
-
-    !Work variables
-    Integer :: ct1, ct2, bl1, bl2, i, nbl
-    logical, dimension(:), allocatable :: tun_mask
-    Type(z_DNS) :: work1, work2, GAM1_dns, GAM2_dns, GA, TRS
-    Real(kind=dp) :: max
-
-    !Arrange contacts in way that order between first and second is always the
-    !same (always ct1 < ct2)
-
-    if (cblk(ni).lt.cblk(nf)) then
-       ct1=ni;ct2=nf;
-    else
-       ct1=nf;ct2=ni;
-    endif
-
-    bl1=cblk(ct1); bl2=cblk(ct2);
-    nbl = size(cblk)
-    ! in this way nt1 < nt2 by construction
-
-    if ( nbl.gt.1 .and. (bl2-bl1).gt.1) then
-
-       ! Compute column-blocks of Gr(i,bl1) up to i=bl2
-       ! Gr(i,bl1) = -gr(i) T(i,i-1) Gr(i-1,bl1)
-       do i = bl1+1, bl2
-          !Checks whether previous block is non null.
-          !If so next block is also null => TUN = 0
-          max=maxval(abs(Gr(i-1,bl1)%val))
-
-          if (max.lt.EPS) then
-             TUN = EPS*EPS !for log plots
-             !Destroy also the block adjecent to diagonal since
-             !this is not deallocated anymore in calling subroutine
-             if (i.gt.(bl1+1)) call destroy(Gr(i-1,bl1))
-             return
-          endif
-
-          !Checks whether block has been created, if not do it
-          if (.not.allocated(Gr(i,bl1)%val)) then
-
-             call prealloc_mult(gsmr(i),ESH(i,i-1),(-1.0_dp, 0.0_dp),work1)
-
-             call prealloc_mult(work1,Gr(i-1,bl1),Gr(i,bl1))
-
-             call destroy(work1)
-
-          endif
-
-          ! avoid destroying blocks closer to diagonal
-          if (i.gt.(bl1+2)) call destroy(Gr(i-1,bl1))
-
-       end do
-
-    endif
-    ! Computes the Gamma matrices
-    call zspectral(SelfEneR(ct1),SelfEneR(ct1),0,GAM1_dns)
-    call zspectral(SelfEneR(ct2),SelfEneR(ct2),0,GAM2_dns)
-
-    ! Work to compute transmission matrix (Gamma2 Gr Gamma1 Ga)
-    call prealloc_mult(GAM2_dns,Gr(bl2,bl1),work1)
-
-    call destroy(GAM2_dns)
-
-    call prealloc_mult(work1,GAM1_dns,work2)
-
-    call destroy(work1)
-
-    call destroy(GAM1_dns)
-
-    call zdagger(Gr(bl2,bl1),GA)
-
-    if (bl2.gt.bl1+1) call destroy( Gr(bl2,bl1) )
-
-    call prealloc_mult(work2,GA,TRS)
-
-    call destroy(work2)
-
-    call destroy(GA)
-
-    call get_tun_mask(ESH, bl2, tun_proj, tun_mask)
-
-    TUN = abs( real(trace(TRS, tun_mask)) )
-    call log_deallocate(tun_mask)
-
-    call destroy(TRS)
-
-  end subroutine calculate_single_transmission_N_contacts
-
-  ! Based on projection indices build a logical mask just on contact block 
-  subroutine get_tun_mask(ESH,nbl,tun_proj,tun_mask)
-    Type(z_DNS), intent(in) :: ESH(:,:)
-    integer, intent(in) :: nbl
-    type(intarray), intent(in) :: tun_proj
-    logical, intent(out), allocatable :: tun_mask(:)    
-
-    integer :: ii, istart, iend, ind
-
-    call log_allocate(tun_mask, ESH(nbl,nbl)%nrow)
-
-    if (allocated(tun_proj%indexes)) then
-       tun_mask = .false.
-
-       ! set the start/end indices of nbl
-       ! NB: istart has offset -1 to avoid +/-1 operations
-       istart = 0
-       do ii = 1, nbl-1
-          istart = istart + ESH(ii,ii)%nrow
-       end do
-       iend = istart + ESH(nbl,nbl)%nrow + 1  
-
-       ! select the indices in tun_proj 
-       do ii = 1, size(tun_proj%indexes)
-          ind = tun_proj%indexes(ii)
-          if (ind > istart .and. ind < iend) then
-             tun_mask(ind - istart) = .true. 
-          end if
-       end do
-    else
-       tun_mask = .true.
-    end if
-
-  end subroutine get_tun_mask
 end module iterative
 
 
