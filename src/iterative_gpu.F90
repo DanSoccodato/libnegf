@@ -916,17 +916,8 @@ contains
 
     call createAll(TRS, work1%nrow, work1%ncol)
     call matsum_gpu(hh, one, work2, mone, work1, TRS)
-       !call asum_gpu(hh, TRS, summ)
-       !print*, 'TRS= ', summ 
-       !call copyFromGPU(TRS)
-       !open(unit=37, file='/p/home/jusers/soccodato1/juwels/TRS.bin', status='replace', access='stream')
-       !write(37) TRS%val 
-       !close(37)
-       !print*, 'TRS%nrow= ', TRS%nrow
-       !print*, 'TRS%ncol= ', TRS%ncol
     call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
     call trace_gpu(hh, TRS, TUN, tun_mask)
-       !print*, 'TUN= ', TUN
     call log_deallocate(tun_mask)
 
     call destroyAll(TRS)
