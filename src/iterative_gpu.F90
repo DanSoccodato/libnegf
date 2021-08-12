@@ -101,30 +101,39 @@ contains
     hhsol = negf%hcusolver
 
     call createAll(gsmr(sbl),nrow,nrow)
+    call copyToGPU(ESH(sbl,sbl))
     call inverse_gpu(hh, hhsol, ESH(sbl,sbl), gsmr(sbl), istat)
+    call deleteGPU(ESH(sbl,sbl))
 
     do i=sbl-1,ebl,-1
 
-       call createAll(work1, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)
+       call createAll(work1, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)    
+       call copyToGPU(ESH(i,i+1))
        call matmul_gpu(hh, one, ESH(i,i+1), gsmr(i+1), zero, work1)
+       call deleteGPU(ESH(i,i+1))
 
        if (.not.keep) then
           call destroyAll(gsmr(i+1))
        end if
 
        call createAll(work2, work1%nrow, ESH(i+1,i)%ncol)
+       call copyToGPU(ESH(i+1,i))
        call matmul_gpu(hh, one, work1, ESH(i+1,i), zero, work2)
+       call deleteGPU(ESH(i+1,i))
        call destroyAll(work1)
 
        call createAll(work1,  ESH(i,i)%nrow, ESH(i,i)%ncol)
+       call copyToGPU(ESH(i,i))
        call matsum_gpu(hh, one, ESH(i,i), mone, work2, work1)
+       call deleteGPU(ESH(i,i))
        call destroyAll(work2)
 
-       call createAll(gsmr(i),work1%nrow,work1%ncol)
+       call createAll(gsmr(i), work1%nrow, work1%ncol)
        call inverse_gpu(hh, hhsol, work1, gsmr(i), istat)    
        call destroyAll(work1)
 
     end do
+
   end subroutine calculate_gsmr_blocks_sp
 
   subroutine calculate_gsmr_blocks_dp(negf,ESH,sbl,ebl,gsmr,keepall)
@@ -165,23 +174,31 @@ contains
     hhsol = negf%hcusolver
 
     call createAll(gsmr(sbl),nrow,nrow)
+    call copyToGPU(ESH(sbl,sbl))
     call inverse_gpu(hh, hhsol, ESH(sbl,sbl), gsmr(sbl), istat)
+    call deleteGPU(ESH(sbl,sbl))
 
     do i=sbl-1,ebl,-1
 
        call createAll(work1, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)    
+       call copyToGPU(ESH(i,i+1))
        call matmul_gpu(hh, one, ESH(i,i+1), gsmr(i+1), zero, work1)
+       call deleteGPU(ESH(i,i+1))
 
        if (.not.keep) then
           call destroyAll(gsmr(i+1))
        end if
 
        call createAll(work2, work1%nrow, ESH(i+1,i)%ncol)
+       call copyToGPU(ESH(i+1,i))
        call matmul_gpu(hh, one, work1, ESH(i+1,i), zero, work2)
+       call deleteGPU(ESH(i+1,i))
        call destroyAll(work1)
 
        call createAll(work1,  ESH(i,i)%nrow, ESH(i,i)%ncol)
+       call copyToGPU(ESH(i,i))
        call matsum_gpu(hh, one, ESH(i,i), mone, work2, work1)
+       call deleteGPU(ESH(i,i))
        call destroyAll(work2)
 
        call createAll(gsmr(i), work1%nrow, work1%ncol)
@@ -222,19 +239,27 @@ contains
     hhsol = negf%hcusolver
 
     call createAll(gsml(sbl),nrow,nrow)
+    call copyToGPU(ESH(sbl,sbl))
     call inverse_gpu(hh, hhsol, ESH(sbl,sbl), gsml(sbl), istat)
+    call deleteGPU(ESH(sbl,sbl))
 
     do i=sbl+1,ebl
 
        call createAll(work1, ESH(i,i-1)%nrow, gsml(i-1)%ncol)    
+       call copyToGPU(ESH(i,i-1))
        call matmul_gpu(hh, one, ESH(i,i-1), gsml(i-1), zero, work1)
+       call deleteGPU(ESH(i,i-1))
 
        call createAll(work2, work1%nrow, ESH(i-1,i)%ncol)
+       call copyToGPU(ESH(i-1,i))
        call matmul_gpu(hh, one, work1, ESH(i-1,i), zero, work2)
+       call deleteGPU(ESH(i-1,i))
        call destroyAll(work1)
 
        call createAll(work1,  ESH(i,i)%nrow, ESH(i,i)%ncol)
+       call copyToGPU(ESH(i,i))
        call matsum_gpu(hh, one, ESH(i,i), mone, work2, work1)
+       call deleteGPU(ESH(i,i))
        call destroyAll(work2)
 
        call createAll(gsml(i), work1%nrow, work1%ncol)
@@ -274,19 +299,27 @@ contains
     hhsol = negf%hcusolver
 
     call createAll(gsml(sbl),nrow,nrow)
+    call copyToGPU(ESH(sbl,sbl))
     call inverse_gpu(hh, hhsol, ESH(sbl,sbl), gsml(sbl), istat)
+    call deleteGPU(ESH(sbl,sbl))
 
     do i=sbl+1,ebl
 
        call createAll(work1, ESH(i,i-1)%nrow, gsml(i-1)%ncol)    
+       call copyToGPU(ESH(i,i-1))
        call matmul_gpu(hh, one, ESH(i,i-1), gsml(i-1), zero, work1)
+       call deleteGPU(ESH(i,i-1))
 
        call createAll(work2, work1%nrow, ESH(i-1,i)%ncol)
+       call copyToGPU(ESH(i-1,i))
        call matmul_gpu(hh, one, work1, ESH(i-1,i), zero, work2)
+       call deleteGPU(ESH(i-1,i))
        call destroyAll(work1)
 
        call createAll(work1,  ESH(i,i)%nrow, ESH(i,i)%ncol)
+       call copyToGPU(ESH(i,i))
        call matsum_gpu(hh, one, ESH(i,i), mone, work2, work1)
+       call deleteGPU(ESH(i,i))
        call destroyAll(work2)
 
        call createAll(gsml(i), work1%nrow, work1%ncol)
@@ -326,29 +359,49 @@ contains
     if (.not.present(ebl)) then
        if (nbl.eq.1) then
           call createAll(Gr(sbl,sbl), ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
+
+          call copyToGPU(ESH(sbl,sbl))
           call inverse_gpu(hh, hhsol, ESH(sbl,sbl), Gr(sbl,sbl), istat)
+          call deleteGPU(ESH(sbl,sbl))
        else
           call createAll(work1, ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
+
+          call copyToGPU(ESH(sbl,sbl))
           call copy_mat_gpu(hh, ESH(sbl,sbl), work1)
+          call deleteGPU(ESH(sbl,sbl))
 
           if (sbl+1.le.nbl) then
              call createAll(work2, ESH(sbl,sbl+1)%nrow, gsmr(sbl+1)%ncol)
+             call copyToGPU(ESH(sbl,sbl+1))
              call matmul_gpu(hh, one, ESH(sbl,sbl+1), gsmr(sbl+1), zero, work2)
+             call deleteGPU(ESH(sbl,sbl+1))
 
              call createAll(work3, work2%nrow, ESH(sbl+1,sbl)%ncol)
+             call copyToGPU(ESH(sbl+1,sbl))
              call matmul_gpu(hh, one, work2, ESH(sbl+1,sbl), zero, work3)
-             call matsum_gpu(hh, one,  ESH(sbl,sbl), mone, work3, work1)
+             call deleteGPU(ESH(sbl+1,sbl))
+
+             call copyToGPU(ESH(sbl,sbl))
+             call matsum_gpu(hh, one, ESH(sbl,sbl), mone, work3, work1)
+             call deleteGPU(ESH(sbl,sbl))
 
              call destroyAll(work2)
              call destroyAll(work3)
           end if
           if (sbl-1.ge.1) then
              call createAll(work2, ESH(sbl,sbl-1)%nrow, gsml(sbl-1)%ncol)
+             call copyToGPU(ESH(sbl,sbl-1))
              call matmul_gpu(hh, one, ESH(sbl,sbl-1), gsml(sbl-1), zero, work2)
+             call deleteGPU(ESH(sbl,sbl-1))
 
              call createAll(work3, work2%nrow, ESH(sbl-1,sbl)%ncol)
+             call copyToGPU(ESH(sbl-1,sbl))
              call matmul_gpu(hh, one, work2, ESH(sbl-1,sbl), zero, work3)
+             call deleteGPU(ESH(sbl-1,sbl))
+
+             call copyToGPU(ESH(sbl,sbl))
              call matsum_gpu(hh, one, ESH(sbl,sbl), mone, work3, work1)
+             call deleteGPU(ESH(sbl,sbl))
 
              call destroyAll(work2)
              call destroyAll(work3)
@@ -367,13 +420,21 @@ contains
        do i=sbl,ebl,1
           call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
           call createAll(Gr(i,i-1), work1%nrow, Gr(i-1,i-1)%ncol)
+          
+          call copyToGPU(ESH(i,i-1))
           call matmul_gpu(hh, one, gsmr(i), ESH(i,i-1), zero, work1)
+          call deleteGPU(ESH(i,i-1))
+
           call matmul_gpu(hh, mone, work1, Gr(i-1,i-1), zero, Gr(i,i-1))
 
           call destroyAll(work1)
           call createAll(work2, ESH(i-1,i)%nrow, gsmr(i)%ncol)
           call createAll(Gr(i-1,i), Gr(i-1,i-1)%nrow, work2%ncol)
+
+          call copyToGPU(ESH(i-1,i))
           call matmul_gpu(hh, one, ESH(i-1,i), gsmr(i), zero, work2)
+          call deleteGPU(ESH(i-1,i))
+
           call matmul_gpu(hh, mone, Gr(i-1,i-1), work2, zero, Gr(i-1,i))
 
           call createAll(work1, Gr(i,i-1)%nrow, work2%ncol)
@@ -388,13 +449,21 @@ contains
        do i=sbl,ebl,-1
           call createAll(work1, gsml(i)%nrow, ESH(i,i+1)%ncol)
           call createAll(Gr(i,i+1),work1%nrow,Gr(i+1,i+1)%ncol)
+
+          call copyToGPU(ESH(i,i+1))
           call matmul_gpu(hh, one, gsml(i), ESH(i,i+1), zero, work1)
+          call deleteGPU(ESH(i,i+1))
+
           call matmul_gpu(hh, mone, work1, Gr(i+1,i+1), zero, Gr(i,i+1))
 
           call destroyAll(work1)
           call createAll(work2, ESH(i+1,i)%nrow, gsml(i)%ncol)
           call createAll(Gr(i+1,i), Gr(i+1,i+1)%nrow, work2%ncol)
+
+          call copyToGPU(ESH(i+1,i))
           call matmul_gpu(hh, one, ESH(i+1,i), gsml(i), zero, work2)
+          call deleteGPU(ESH(i+1,i))
+
           call matmul_gpu(hh, mone, Gr(i+1,i+1), work2, zero, Gr(i+1,i))
 
           call createAll(work1, Gr(i,i+1)%nrow, work2%ncol)
@@ -406,7 +475,7 @@ contains
           call destroyAll(work1)
        end do
     endif
-
+           
   end subroutine calculate_Gr_tridiag_blocks_sp
 
   subroutine calculate_Gr_tridiag_blocks_dp(negf,ESH,gsml,gsmr,Gr,sbl,ebl)
@@ -438,29 +507,49 @@ contains
     if (.not.present(ebl)) then
        if (nbl.eq.1) then
           call createAll(Gr(sbl,sbl), ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
+
+          call copyToGPU(ESH(sbl,sbl))
           call inverse_gpu(hh, hhsol, ESH(sbl,sbl), Gr(sbl,sbl), istat)
+          call deleteGPU(ESH(sbl,sbl))
        else
           call createAll(work1, ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
+
+          call copyToGPU(ESH(sbl,sbl))
           call copy_mat_gpu(hh, ESH(sbl,sbl), work1)
+          call deleteGPU(ESH(sbl,sbl))
 
           if (sbl+1.le.nbl) then
              call createAll(work2, ESH(sbl,sbl+1)%nrow, gsmr(sbl+1)%ncol)
+             call copyToGPU(ESH(sbl,sbl+1))
              call matmul_gpu(hh, one, ESH(sbl,sbl+1), gsmr(sbl+1), zero, work2)
+             call deleteGPU(ESH(sbl,sbl+1))
 
              call createAll(work3, work2%nrow, ESH(sbl+1,sbl)%ncol)
+             call copyToGPU(ESH(sbl+1,sbl))
              call matmul_gpu(hh, one, work2, ESH(sbl+1,sbl), zero, work3)
+             call deleteGPU(ESH(sbl+1,sbl))
+
+             call copyToGPU(ESH(sbl,sbl))
              call matsum_gpu(hh, one, ESH(sbl,sbl), mone, work3, work1)
+             call deleteGPU(ESH(sbl,sbl))
 
              call destroyAll(work2)
              call destroyAll(work3)
           end if
           if (sbl-1.ge.1) then
              call createAll(work2, ESH(sbl,sbl-1)%nrow, gsml(sbl-1)%ncol)
+             call copyToGPU(ESH(sbl,sbl-1))
              call matmul_gpu(hh, one, ESH(sbl,sbl-1), gsml(sbl-1), zero, work2)
+             call deleteGPU(ESH(sbl,sbl-1))
 
              call createAll(work3, work2%nrow, ESH(sbl-1,sbl)%ncol)
+             call copyToGPU(ESH(sbl-1,sbl))
              call matmul_gpu(hh, one, work2, ESH(sbl-1,sbl), zero, work3)
+             call deleteGPU(ESH(sbl-1,sbl))
+
+             call copyToGPU(ESH(sbl,sbl))
              call matsum_gpu(hh, one, ESH(sbl,sbl), mone, work3, work1)
+             call deleteGPU(ESH(sbl,sbl))
 
              call destroyAll(work2)
              call destroyAll(work3)
@@ -479,13 +568,21 @@ contains
        do i=sbl,ebl,1
           call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
           call createAll(Gr(i,i-1), work1%nrow, Gr(i-1,i-1)%ncol)
+          
+          call copyToGPU(ESH(i,i-1))
           call matmul_gpu(hh, one, gsmr(i), ESH(i,i-1), zero, work1)
+          call deleteGPU(ESH(i,i-1))
+
           call matmul_gpu(hh, mone, work1, Gr(i-1,i-1), zero, Gr(i,i-1))
 
           call destroyAll(work1)
           call createAll(work2, ESH(i-1,i)%nrow, gsmr(i)%ncol)
           call createAll(Gr(i-1,i), Gr(i-1,i-1)%nrow, work2%ncol)
+
+          call copyToGPU(ESH(i-1,i))
           call matmul_gpu(hh, one, ESH(i-1,i), gsmr(i), zero, work2)
+          call deleteGPU(ESH(i-1,i))
+
           call matmul_gpu(hh, mone, Gr(i-1,i-1), work2, zero, Gr(i-1,i))
 
           call createAll(work1, Gr(i,i-1)%nrow, work2%ncol)
@@ -500,13 +597,21 @@ contains
        do i=sbl,ebl,-1
           call createAll(work1, gsml(i)%nrow, ESH(i,i+1)%ncol)
           call createAll(Gr(i,i+1),work1%nrow,Gr(i+1,i+1)%ncol)
+
+          call copyToGPU(ESH(i,i+1))
           call matmul_gpu(hh, one, gsml(i), ESH(i,i+1), zero, work1)
+          call deleteGPU(ESH(i,i+1))
+
           call matmul_gpu(hh, mone, work1, Gr(i+1,i+1), zero, Gr(i,i+1))
 
           call destroyAll(work1)
           call createAll(work2, ESH(i+1,i)%nrow, gsml(i)%ncol)
           call createAll(Gr(i+1,i), Gr(i+1,i+1)%nrow, work2%ncol)
+
+          call copyToGPU(ESH(i+1,i))
           call matmul_gpu(hh, one, ESH(i+1,i), gsml(i), zero, work2)
+          call deleteGPU(ESH(i+1,i))
+
           call matmul_gpu(hh, mone, Gr(i+1,i+1), work2, zero, Gr(i+1,i))
 
           call createAll(work1, Gr(i,i+1)%nrow, work2%ncol)
@@ -556,9 +661,9 @@ contains
 
           !Creating Gam = i (SE -  SE^+)
           call createAll(Gam, SelfEneR(j)%nrow, SelfEneR(j)%ncol)
-          call spectral_gpu(hh, SelfEneR(j),Gam)
+          call spectral_gpu(hh, SelfEneR(j), Gam)
 
-          frmdiff = cmplx(frm(j)-frm(ref),0.0_sp,sp)
+          frmdiff = cmplx(frm(j)-frm(ref),0.0_dp,dp)
 
           ! Computation of Gn(cb,cb) = Gr(cb,cb) Gam(cb) Gr(cb,cb)^+
           call createAll(work1, Gam%nrow, Gr(cb,cb)%nrow) !it's Gr^+ --> I take nrow
@@ -579,7 +684,9 @@ contains
                 call createAll(work1, ESH(i,i+1)%nrow, Gr(i+1,cb)%ncol)   
                 call createAll(Gr(i,cb), gsml(i)%nrow, work1%ncol)
              end if
+             call copyToGPU(ESH(i,i+1))
              call matmul_gpu(hh, one, ESH(i,i+1), Gr(i+1,cb),zero, work1)
+             call deleteGPU(ESH(i,i+1))
              call matmul_gpu(hh, mone, gsml(i), work1, zero, Gr(i,cb))
              call destroyAll(work1)
 
@@ -612,7 +719,9 @@ contains
                 call createAll(work1, ESH(i,i-1)%nrow, Gr(i-1,cb)%ncol)
                 call createAll(Gr(i,cb), gsmr(i)%nrow, work1%ncol)
              end if
+             call copyToGPU(ESH(i,i-1))
              call matmul_gpu(hh, one, ESH(i,i-1), Gr(i-1,cb),zero, work1)
+             call deleteGPU(ESH(i,i-1))
              call matmul_gpu(hh, mone, gsmr(i), work1, zero, Gr(i,cb))
              call destroyAll(work1)
 
@@ -673,7 +782,6 @@ contains
     nbl = struct%num_PLs
     hh = negf%hcublas
 
-
     do j=1,ncont
 
        if (j.NE.ref .AND. ABS(frm(j)-frm(ref)).GT.EPS) THEN
@@ -705,7 +813,9 @@ contains
                 call createAll(work1, ESH(i,i+1)%nrow, Gr(i+1,cb)%ncol)   
                 call createAll(Gr(i,cb), gsml(i)%nrow, work1%ncol)
              end if
+             call copyToGPU(ESH(i,i+1))
              call matmul_gpu(hh, one, ESH(i,i+1), Gr(i+1,cb),zero, work1)
+             call deleteGPU(ESH(i,i+1))
              call matmul_gpu(hh, mone, gsml(i), work1, zero, Gr(i,cb))
              call destroyAll(work1)
 
@@ -738,7 +848,9 @@ contains
                 call createAll(work1, ESH(i,i-1)%nrow, Gr(i-1,cb)%ncol)
                 call createAll(Gr(i,cb), gsmr(i)%nrow, work1%ncol)
              end if
+             call copyToGPU(ESH(i,i-1))
              call matmul_gpu(hh, one, ESH(i,i-1), Gr(i-1,cb),zero, work1)
+             call deleteGPU(ESH(i,i-1))
              call matmul_gpu(hh, mone, gsmr(i), work1, zero, Gr(i,cb))
              call destroyAll(work1)
 
@@ -814,7 +926,7 @@ contains
 
     ! Computes the Gamma matrices
     call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
-    call spectral_gpu(hh, SelfEneR(ct1),GAM1_dns)
+    call spectral_gpu(hh, SelfEneR(ct1), GAM1_dns)
 
     ! Work to compute transmission matrix (Gamma G Gamma G)
     call createAll(work1, GAM1_dns%nrow, Gr(bl1,bl1)%ncol)
@@ -838,7 +950,6 @@ contains
 
     call createAll(TRS, work1%nrow, work1%ncol)
     call matsum_gpu(hh, one, work2, mone, work1, TRS)
-
     call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
     call trace_gpu(hh, TRS, TUN, tun_mask)
     call log_deallocate(tun_mask)
@@ -983,7 +1094,11 @@ contains
 
              call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
              call createAll(Gr(i,bl1), work1%nrow, Gr(i-1,bl1)%ncol)
+
+             call copyToGPU(ESH(i,i-1))
              call matmul_gpu(hh, mone, gsmr(i), ESH(i,i-1), zero, work1)
+             call deleteGPU(ESH(i,i-1))
+
              call matmul_gpu(hh, one, work1, Gr(i-1,bl1) ,zero, Gr(i,bl1))
              call destroyAll(work1)
 
@@ -1082,7 +1197,11 @@ contains
 
              call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
              call createAll(Gr(i,bl1), work1%nrow, Gr(i-1,bl1)%ncol)
+
+             call copyToGPU(ESH(i,i-1))
              call matmul_gpu(hh, mone, gsmr(i), ESH(i,i-1), zero, work1)
+             call deleteGPU(ESH(i,i-1))
+
              call matmul_gpu(hh, one, work1, Gr(i-1,bl1) ,zero, Gr(i,bl1))
              call destroyAll(work1)
 

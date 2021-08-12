@@ -364,6 +364,7 @@ end interface
    subroutine copyToGPU_sp(A)
      type(c_DNS), intent(in), target :: A     
      integer :: err
+     call createGPU(A)
      err = cu_copyMatH2D(c_loc(A%val), A%d_addr, size(A%val)*COMPLEX_SIZE)
    end subroutine copyToGPU_sp  
    
@@ -404,6 +405,7 @@ end interface
    subroutine copyToGPU_dp(A)
      type(z_DNS), intent(in), target :: A     
      integer :: err
+     call createGPU(A)
      err = cu_copyMatH2D(c_loc(A%val), A%d_addr, size(A%val)*DOUBLE_COMPLEX_SIZE)
    end subroutine copyToGPU_dp  
    
@@ -722,16 +724,10 @@ end interface
     integer :: ii, nbl
 
     nbl = size(M,1)
-    call createGPU(M(1,1))
     call copyToGPU(M(1,1))
     do ii=2,nbl
-       call createGPU(M(ii,ii))
        call copyToGPU(M(ii,ii))
-
-       call createGPU(M(ii-1,ii))
        call copyToGPU(M(ii-1,ii))
-       
-       call createGPU(M(ii,ii-1))
        call copyToGPU(M(ii,ii-1))
     end do
   end subroutine copy_trid_toGPU_sp
@@ -756,7 +752,6 @@ end interface
     nbl = size(V)
     do ii=1,nbl
        if(allocated(V(ii)%val)) then
-          call createGPU(V(ii))
           call copyToGPU(V(ii))
        endif
     end do
@@ -782,16 +777,10 @@ end interface
     nbl = size(M,1)
     do ii=2,nbl
        
-       call createGPU(M(ii,ii-1))
        call copyToGPU(M(ii,ii-1))
-
-       call createGPU(M(ii-1,ii))
        call copyToGPU(M(ii-1,ii))
-       
-       call createGPU(M(ii,ii))
        call copyToGPU(M(ii,ii))
     end do
-    call createGPU(M(1,1))
     call copyToGPU(M(1,1))
   end subroutine copy_trid_toGPU_dp
 
@@ -815,7 +804,6 @@ end interface
     nbl = size(V)
     do ii=1,nbl
        if(allocated(V(ii)%val)) then
-          call createGPU(V(ii))
           call copyToGPU(V(ii))
        endif
     end do

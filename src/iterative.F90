@@ -29,12 +29,14 @@ module iterative
   use inversions
   use elph
   use ln_structure, only : TStruct_Info
-  use lib_param, only : MAXNCONT, Tnegf, intarray, cublasHandle
+  use lib_param, only : MAXNCONT, Tnegf, intarray
   use mpi_globals, only : id, numprocs, id0                                 !DAR
   use outmatrix, only : outmat_c, inmat_c, direct_out_c, direct_in_c
   use clock
 #:if defined("GPU")
   use cudautils
+  use cublas_v2
+  use cusolverDn
   use iterative_gpu
 #:else
   use iterative_cpu
@@ -124,7 +126,7 @@ CONTAINS
     integer, intent(in) :: outer
 
     !Work
-    type(z_DNS), dimension(:,:), allocatable :: ESH, S, H
+    type(z_DNS), dimension(:,:), allocatable :: ESH
     type(z_CSR) :: ESH_tot, Ain, S_csr, H_csr
     integer :: i,ierr, nbl, ncont,ii,n
     real(dp) :: sum1
@@ -148,7 +150,6 @@ CONTAINS
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,2,nbl)
 
 #:if defined("GPU")
-    call delete_vdns_fromGPU(SelfEneR)
     call copy_trid_toHOST(Gr) 
 #:endif
     call destroy_ESH(ESH)
@@ -324,6 +325,9 @@ CONTAINS
 
       call init_blkmat(Gn,ESH)
 
+#:if defined("GPU")
+      call copy_vdns_toGPU(SelfEneR) 
+#:endif
       call calculate_Gn_tridiag_blocks(negf,ESH,SelfEneR,frm,ref,negf%str,gsml,gsmr,Gr,Gn)
 
 #:if defined("GPU")
@@ -457,6 +461,7 @@ CONTAINS
             Gr_columns(i) = cblk(i)
          endif
       end do
+      call copy_vdns_toGPU(SelfEneR)
 #:else
       do i=1,ncont
          if (i.NE.ref) THEN
@@ -758,15 +763,6 @@ CONTAINS
     type(z_DNS), dimension(:,:) :: ESH
 
     nbl=size(ESH,1)
-#:if defined("GPU")
-    do i=1,nbl
-       call destroyAll(ESH(i,i))
-    end do
-    do i=2,nbl
-       call destroyAll(ESH(i-1,i))
-       call destroyAll(ESH(i,i-1))
-    end do
-#:else 
     do i=1,nbl
        call destroy(ESH(i,i))
     end do
@@ -774,7 +770,6 @@ CONTAINS
        call destroy(ESH(i-1,i))
        call destroy(ESH(i,i-1))
     end do
-#:endif
   end subroutine destroy_ESH
 
 
@@ -2965,6 +2960,10 @@ CONTAINS
        call calculate_gsmr_blocks(negf,ESH,nbl,2,gsmr,.false.)
        call allocate_blk_dns(Gr,nbl)
        call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,1)
+       
+#:if defined("GPU")
+       call copy_vdns_toGPU(SelfEneR)
+#:endif
        call calculate_single_transmission_2_contacts(negf,nit,nft,ESH,SelfEneR,str%cblk,tun_proj,Gr,tun)
        tun_mat(1) = tun
 
@@ -2973,6 +2972,9 @@ CONTAINS
        call allocate_gsm(gsmr,nbl)
        call calculate_gsmr_blocks(negf,ESH,nbl,2,gsmr)
 
+#:if defined("GPU")
+       call copy_vdns_toGPU(SelfEneR)
+#:endif
        do icpl = 1, size(ni)
 
           !Computation of transmission(s) between contacts ni(:) -> nf(:)
@@ -3016,7 +3018,12 @@ CONTAINS
     call deallocate_blk_dns(ESH)
 
     !Distruzione delle Green
-    call destroy_ESH(Gr) 
+    call destroyAll(Gr(1,1))
+    do i = 2,nbl
+       call destroyAll(Gr(i,i))   
+       call destroyAll(Gr(i-1,i))   
+       call destroyAll(Gr(i,i-1))   
+    end do
     call deallocate_blk_dns(Gr)
 
     !Deallocate energy-dependent matrices
@@ -3043,7 +3050,7 @@ CONTAINS
 
     ! Local variables
     Type(z_CSR) :: ESH_tot, GrCSR
-    Type(z_DNS), Dimension(:,:), allocatable :: ESH, S_dns, H_dns
+    Type(z_DNS), Dimension(:,:), allocatable :: ESH
     Type(r_CSR) :: Grm                          ! Green Retarded nella molecola
     real(dp), dimension(:), allocatable :: diag
     Real(dp) :: tun, summ
@@ -3066,6 +3073,10 @@ CONTAINS
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,1)
     call calculate_Gr_tridiag_blocks(negf,ESH,gsml,gsmr,Gr,2,nbl)
     !Computation of transmission(s) between contacts ni(:) -> nf(:)
+#:if defined("GPU")
+    call copy_vdns_toGPU(SelfEneR)
+#:endif
+
     do icpl=1,size(ni)
 
        nit=ni(icpl)
@@ -3160,34 +3171,11 @@ CONTAINS
     integer, intent(in) :: nbl
     type(z_DNS), dimension(:,:), allocatable :: ESH
 
-    type(z_DNS), dimension(:,:), allocatable :: S, H
     Type(z_CSR) :: ESH_tot
     integer :: i
 
-#:if defined("GPU")
-   type(cublasHandle) :: hh
-#:endif
-
     associate (cblk=>negf%str%cblk)
     ! Take CSR H,S and build ES-H in dense blocks
-#:if defined("GPU")
-      call allocate_blk_dns(ESH,nbl)
-      call allocate_blk_dns(S,nbl)
-      call allocate_blk_dns(H,nbl)
-      call copy_vdns_toGPU(SelfEneR)
-     
-      call build_ESH_onGPU(negf, Ec, S, H, ESH)
-      
-      hh = negf%hcublas
-      do i=1,ncont
-         call matsum_gpu(hh, (1.0_dp,0.0_dp),ESH(cblk(i),cblk(i)), (-1.0_dp,0.0_dp),SelfEneR(i),ESH(cblk(i),cblk(i)))
-      end do
-      
-      call destroy_ESH(S)
-      call destroy_ESH(H)
-      deallocate(S)
-      deallocate(H)
-#:else
       call prealloc_sum(negf%H,negf%S,(-1.0_dp, 0.0_dp),Ec,ESH_tot)
 
       call allocate_blk_dns(ESH, nbl)
@@ -3201,8 +3189,6 @@ CONTAINS
       end do
       !! Add el-ph self energy if any
       if (allocated(negf%inter)) call negf%inter%add_sigma_r(ESH)
-
-#:endif
      end associate
 
    end subroutine build_ESH
@@ -3251,18 +3237,6 @@ CONTAINS
     if (ierr.ne.0) stop 'DEALLOCATION ERROR: could not deallocate block-Matrix'
 
   end subroutine deallocate_blk_dns
-
-  !************************************************************************
-  !
-  ! Subroutine for transmission calculation
-  !
-  !************************************************************************
-  ! NOTE:
-  !
-  !  This subroutine was hacked quickly to obain effiecient tunneling calcs
-  !  Useful only when there are 2 contacts
-  !                ===================
-  !************************************************************************
 
 end module iterative
 
