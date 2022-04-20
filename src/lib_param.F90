@@ -24,15 +24,17 @@ module lib_param
   use ln_precision, only : dp
   use globals
   use mat_def
-  use ln_structure, only : TStruct_info, print_Tstruct
+  use ln_structure, only : TStruct_info, TBasisCenters, TNeighbourMap, print_Tstruct
   use input_output
-  use elph, only : init_elph_1, Telph, destroy_elph, init_elph_2, init_elph_3
+  use elph, only : Telph
   use phph
   use energy_mesh, only : mesh
-  use interactions, only : Interaction
-  use elphdd, only : ElPhonDephD, ElPhonDephD_create
-  use elphdb, only : ElPhonDephB, ElPhonDephB_create
-  use elphds, only : ElPhonDephS, ElPhonDephS_create
+  use interactions, only : TInteraction, TInteractionArray
+  use elphdd, only : ElPhonDephD, ElPhonDephD_create, ElPhonDephD_init
+  use elphdb, only : ElPhonDephB, ElPhonDephB_create, ElPhonDephB_init
+  use elphds, only : ElPhonDephS, ElPhonDephS_create, ElPhonDephS_init
+  use elphinel, only : ElPhonInel, ElPhonInel_create, ElPhonInel_init
+  use scba
   use ln_cache
 #:if defined("MPI")
   use libmpifx_module, only : mpifx_comm
@@ -40,12 +42,13 @@ module lib_param
   implicit none
   private
 
-  public :: Tnegf, intArray, TEnGrid
-  public :: set_defaults, print_all_vars
+  public :: Tnegf, intArray, TEnGrid, TInteractionArray
 
   public :: set_bp_dephasing
-  public :: set_elph_dephasing, destroy_elph_model
-  public :: set_elph_block_dephasing, set_elph_s_dephasing
+  public :: set_elph_dephasing
+  public :: set_elph_block_dephasing
+  public :: set_elph_s_dephasing
+  public :: set_elph_inelastic
   public :: set_phph
   integer, public, parameter :: MAXNCONT=10
 
@@ -188,7 +191,8 @@ module lib_param
     logical    :: intDM           ! tells DM is internally allocated
 
     type(TStruct_Info) :: str     ! system structure
-
+    type(TBasisCenters) :: basis  ! local basis centers
+    type(TNeighbourMap), dimension(:), allocatable :: neighbour_map
     integer :: iE                 ! Currently processed En point (index)
     complex(dp) :: Epnt           ! Currently processed En point (value)
     real(dp) :: kwght             ! currently processed k-point weight
@@ -198,15 +202,21 @@ module lib_param
     type(TEnGrid), dimension(:), allocatable :: en_grid
     integer :: local_en_points    ! Local number of energy points
 
+    ! Array to store all k-points and k-weights
+    real(dp), allocatable, dimension(:,:) :: kpoints
+    real(dp), allocatable, dimension(:) :: kweights
+    ! Array of local k-point indices
+    integer, allocatable, dimension(:) :: local_k_index
+
     type(mesh) :: emesh           ! energy mesh for adaptive Simpson
     real(dp) :: int_acc           ! adaptive integration accuracy
 
     type(Telph) :: elph           ! electron-phonon data
     type(Tphph) :: phph           ! phonon-phonon data
 
-    ! Many Body Interactions
-    class(Interaction), allocatable :: inter
-
+    ! Many Body Interactions as array of pointers
+    type(TInteractionArray), dimension(:), allocatable :: interactArray
+    type(TScbaDriver) :: scbaDriver
 
     !! Output variables: these arrays are filled by internal subroutines to store
     !! library outputs
@@ -215,6 +225,7 @@ module lib_param
     real(dp), dimension(:,:), allocatable :: ldos_mat
     real(dp), dimension(:), allocatable :: currents
 
+    ! These variables need to be done to clean up
     logical :: tOrthonormal = .false.
     logical :: tOrthonormalDevice = .false.
     integer :: numStates = 0
@@ -230,15 +241,27 @@ module lib_param
     integer :: readOldSGF
 
     ! Work variable: surface green cache.
-    class(TSurfaceGreenCache), allocatable :: surface_green_cache
+    class(TMatrixCache), allocatable :: surface_green_cache
+    class(TMatrixCache), allocatable :: ESH
+    ! These are pointers so they can be passed to inelastic
+    class(TMatrixCache), pointer :: G_r => null()
+    class(TMatrixCache), pointer :: G_n => null()
 
- end type Tnegf
+    contains
+
+    procedure :: set_defaults => set_defaults
+    procedure :: print_all_vars => print_all_vars
+    procedure :: create_interactions => create_interactions
+    procedure :: destroy_interactions => destroy_interactions
+    procedure :: get_empty_slot => get_empty_slot
+
+  end type Tnegf
 
 contains
 
   !> Set buttiker probe dephasing
   subroutine set_bp_dephasing(negf, coupling)
-    type(Tnegf) :: negf
+    type(Tnegf), intent(inout) :: negf
     real(dp),  dimension(:), intent(in) :: coupling
 
     if (.not.allocated(negf%bp_deph%coupling)) then
@@ -248,118 +271,196 @@ contains
 
   end subroutine set_bp_dephasing
 
+
   !> Set values for the local electron phonon dephasing model
   !! (elastic scattering only)
   subroutine set_elph_dephasing(negf, coupling, niter)
-
-    type(Tnegf) :: negf
-    type(ElPhonDephD) :: elphdd_tmp
+    type(Tnegf), intent(inout) :: negf
     real(dp),  dimension(:), allocatable, intent(in) :: coupling
-    integer :: niter
+    integer, intent(in) :: niter
 
-    call elphondephd_create(elphdd_tmp, negf%str, coupling, niter, 1.0d-7)
-    if(.not.allocated(negf%inter)) allocate(negf%inter, source=elphdd_tmp)
-
+    integer :: ii
+    ii = negf%get_empty_slot()
+    if (ii > size(negf%interactArray)) then
+       stop 'ERROR: empty slot not found'
+    end if
+    call elphondephd_create(negf%interactArray(ii)%inter)
+    select type(pInter => negf%interactArray(ii)%inter)
+    type is(ElPhonDephD)
+      call elphondephd_init(pInter, negf%str, coupling, niter)
+    class default
+      stop 'ERROR: error of type downcast to ElPhonDephD'
+    end select
   end subroutine set_elph_dephasing
 
   !> Set values for the semi-local electron phonon dephasing model
   !! (elastic scattering only)
   subroutine set_elph_block_dephasing(negf, coupling, orbsperatom, niter)
-
-    type(Tnegf) :: negf
-    type(ElPhonDephB) :: elphdb_tmp
+    type(Tnegf), intent(inout) :: negf
     real(dp),  dimension(:), allocatable, intent(in) :: coupling
     integer,  dimension(:), allocatable, intent(in) :: orbsperatom
-    integer :: niter
+    integer, intent(in) :: niter
 
-    call elphondephb_create(elphdb_tmp, negf%str, coupling, orbsperatom, niter, 1.0d-7)
-    if(.not.allocated(negf%inter)) allocate(negf%inter, source=elphdb_tmp)
-
+    integer :: ii
+    ii = negf%get_empty_slot()
+    if (ii > size(negf%interactArray)) then
+       stop 'ERROR: empty slot not found'
+    end if
+    call elphondephb_create(negf%interactArray(ii)%inter)
+    select type(pInter => negf%interactArray(ii)%inter)
+    type is(ElPhonDephB)
+      call elphondephb_init(pInter, negf%str, coupling, orbsperatom, niter)
+    class default
+      stop 'ERROR: error of type downcast to ElPhonDephB'
+    end select
   end subroutine set_elph_block_dephasing
 
- !> Set values for the semi-local electron phonon dephasing model
+  !> Set values for the semi-local electron phonon dephasing model
   !! (elastic scattering only)
   subroutine set_elph_s_dephasing(negf, coupling, orbsperatom, niter)
-
-    type(Tnegf) :: negf
-    type(ElPhonDephS) :: elphds_tmp
+    type(Tnegf), intent(inout) :: negf
     real(dp),  dimension(:), allocatable, intent(in) :: coupling
     integer,  dimension(:), allocatable, intent(in) :: orbsperatom
-    integer :: niter
+    integer, intent(in) :: niter
 
-    call elphondephs_create(elphds_tmp, negf%str, coupling, orbsperatom, negf%S, niter, 1.0d-7)
-    if(.not.allocated(negf%inter)) allocate(negf%inter, source=elphds_tmp)
-
+    integer :: ii
+    ii = negf%get_empty_slot()
+    if (ii > size(negf%interactArray)) then
+       stop 'ERROR: empty slot not found'
+    end if
+    call elphondephs_create(negf%interactArray(ii)%inter)
+    select type(pInter => negf%interactArray(ii)%inter)
+    type is(ElPhonDephS)
+      call elphondephs_init(pInter, negf%str, coupling, orbsperatom, negf%S, niter)
+    class default
+      stop 'ERROR: error of type downcast to ElPhonDephS'
+    end select
   end subroutine set_elph_s_dephasing
 
+  subroutine set_elph_inelastic(negf, coupling, wq, Temp, dz, eps0, eps_inf, q0, area, niter)
+    type(Tnegf), intent(inout) :: negf
+    real(dp),  dimension(:), allocatable, intent(in) :: coupling
+    real(dp), intent(in) :: wq
+    real(dp), intent(in) :: Temp
+    real(dp), intent(in) :: dz
+    real(dp), intent(in) :: eps0 
+    real(dp), intent(in) :: eps_inf
+    real(dp), intent(in) :: q0
+    real(dp), intent(in) :: area
+    integer, intent(in) :: niter
+
+    integer :: ii
+    ii = negf%get_empty_slot()
+    if (ii > size(negf%interactArray)) then
+       stop 'ERROR: empty slot not found'
+    end if
+
+    call elphonInel_create(negf%interactArray(ii)%inter)
+    select type(pInter => negf%interactArray(ii)%inter)
+    type is(ElPhonInel)
+      call elphoninel_init(pInter, negf%cartComm%id, negf%str, negf%basis, coupling, &
+          &  wq, Temp, dz, eps0, eps_inf, q0, area, niter)
+    class default
+      stop 'ERROR: error of type downcast to ElPhonInel'
+    end select
+
+  end subroutine set_elph_inelastic
+
+  !> create the array of interactions
+  subroutine create_interactions(this, nInteractions)
+    class(Tnegf) :: this
+    integer, intent(in) :: nInteractions
+
+    allocate(this%interactArray(nInteractions))
+
+  end subroutine create_interactions
+
+  !> clean interactions objects
+  subroutine destroy_interactions(this)
+    class(Tnegf) :: this
+
+    integer :: ii
+
+    if (allocated(this%interactArray)) then
+      do ii = 1, size(this%interactArray)
+        if (allocated(this%interactArray(ii)%inter)) then
+          deallocate(this%interactArray(ii)%inter)
+        end if
+      end do
+      deallocate(this%interactArray)
+    end if
+
+  end subroutine destroy_interactions
+
+  !> get the first empty slot in the interaction array
+  function get_empty_slot(this) result(ii)
+    class(TNegf) :: this
+    integer :: ii
+
+    do ii = 1, size(this%interactArray)
+      if (.not.allocated(this%interactArray(ii)%inter)) exit
+    end do
+
+  end function get_empty_slot
 
 
-  !> Destroy elph model. This routine is accessible from interface as
-  !! it can be meaningful to "switch off" elph when doing different
-  !! task (density or current)
-  subroutine destroy_elph_model(negf)
-    type(Tnegf) :: negf
 
-    if (allocated(negf%inter)) deallocate(negf%inter)
-    call destroy_elph(negf%elph)
+  subroutine set_defaults(this)
+    class(Tnegf) :: this
 
-  end subroutine destroy_elph_model
+     this%verbose = 10
 
-  subroutine set_defaults(negf)
-    type(Tnegf) :: negf
+     this%scratch_path = './GS/'
+     this%out_path = './'
+     this%DorE = 'D'           ! Density or En.Density
 
-     negf%verbose = 10
+     this%ReadOldDM_SGFs = 1   ! Compute Surface G.F. do not save
+     this%ReadOldT_SGFs = 1    ! Compute Surface G.F. do not save
 
-     negf%scratch_path = './GS/'
-     negf%out_path = './'
-     negf%DorE = 'D'           ! Density or En.Density
+     this%kwght = 1.d0
+     this%ikpoint = 1
 
-     negf%ReadOldDM_SGFs = 1   ! Compute Surface G.F. do not save
-     negf%ReadOldT_SGFs = 1    ! Compute Surface G.F. do not save
+     this%Ec = 0.d0
+     this%Ev = 0.d0
+     this%DeltaEc = 0.d0
+     this%DeltaEv = 0.d0
 
-     negf%kwght = 1.d0
-     negf%ikpoint = 1
+     this%E = 0.d0            ! Holding variable
+     this%dos = 0.d0          ! Holding variable
+     this%eneconv = 1.d0      ! Energy conversion factor
 
-     negf%Ec = 0.d0
-     negf%Ev = 0.d0
-     negf%DeltaEc = 0.d0
-     negf%DeltaEv = 0.d0
+     this%isSid = .false.
+     this%intHS = .true.
+     this%intDM = .true.
 
-     negf%E = 0.d0            ! Holding variable
-     negf%dos = 0.d0          ! Holding variable
-     negf%eneconv = 1.d0      ! Energy conversion factor
+     this%delta = 1.d-4      ! delta for G.F.
+     this%dos_delta = 1.d-4  ! delta for DOS
+     this%deltaModel = 1     ! deltaOmega model
+     this%wmax = 0.009d0     ! about 2000 cm^-1 cutoff
+     this%Emin = 0.d0        ! Tunneling or dos interval
+     this%Emax = 0.d0        !
+     this%Estep = 0.d0       ! Tunneling or dos E step
+     this%g_spin = 2.d0      ! spin degeneracy
 
-     negf%isSid = .false.
-     negf%intHS = .true.
-     negf%intDM = .true.
-
-     negf%delta = 1.d-4      ! delta for G.F.
-     negf%dos_delta = 1.d-4  ! delta for DOS
-     negf%deltaModel = 1     ! deltaOmega model
-     negf%wmax = 0.009d0     ! about 2000 cm^-1 cutoff
-     negf%Emin = 0.d0        ! Tunneling or dos interval
-     negf%Emax = 0.d0        !
-     negf%Estep = 0.d0       ! Tunneling or dos E step
-     negf%g_spin = 2.d0      ! spin degeneracy
-
-     negf%Np_n = (/20, 20/)  ! Number of points for n
-     negf%Np_p = (/20, 20/)  ! Number of points for p
-     negf%n_kt = 10          ! Numero di kT per l'integrazione
-     negf%n_poles = 3        ! Numero di poli
-     negf%activecont = 0     ! contact selfenergy
-     allocate(negf%ni(1))
-     allocate(negf%nf(1))
-     negf%ni(1) = 1
-     negf%nf(1) = 2          !
-     negf%min_or_max = 1     ! Set reference cont to max(mu)
-     negf%refcont = 1        ! call set_ref_cont()
-     negf%outer = 2          ! Compute full D.M. L,U extra
-     negf%dumpHS = .false.
-     negf%int_acc = 1.d-3    ! Integration accuracy
+     this%Np_n = (/20, 20/)  ! Number of points for n
+     this%Np_p = (/20, 20/)  ! Number of points for p
+     this%n_kt = 10          ! Numero di kT per l'integrazione
+     this%n_poles = 3        ! Numero di poli
+     this%activecont = 0     ! contact selfenergy
+     this%min_or_max = 1     ! Set reference cont to max(mu)
+     this%refcont = 1        ! call set_ref_cont()
+     this%outer = 2          ! Compute full D.M. L,U extra
+     this%dumpHS = .false.
+     this%int_acc = 1.d-3    ! Integration accuracy
                              ! Only in adaptive refinement
-     negf%ndos_proj = 0
+     this%ndos_proj = 0
 
-     negf%surface_green_cache = TSurfaceGreenCacheDisk(scratch_path=negf%scratch_path)
+     this%surface_green_cache = TMatrixCacheDisk(scratch_path=this%scratch_path)
+     
+     allocate(this%ni(1))
+     allocate(this%nf(1))
+     this%ni(1) = 1
+     this%nf(1) = 2          !
 
    end subroutine set_defaults
 
@@ -379,71 +480,71 @@ contains
 
 
 
-   subroutine print_all_vars(negf,io)
-     type(Tnegf) :: negf
+   subroutine print_all_vars(this,io)
+     class(Tnegf) :: this
      integer, intent(in) :: io
 
      integer :: ii
 
-     call print_Tstruct(negf%str,io)
+     call print_Tstruct(this%str,io)
 
-     write(io,*) 'verbose=',negf%verbose
+     write(io,*) 'verbose=',this%verbose
 
-     write(io,*) 'scratch= "'//trim(negf%scratch_path)//'"'
-     write(io,*) 'output= "'//trim(negf%out_path)//'"'
+     write(io,*) 'scratch= "'//trim(this%scratch_path)//'"'
+     write(io,*) 'output= "'//trim(this%out_path)//'"'
 
-     write(io,*) 'isSid= ',negf%isSid
-     write(io,*) 'mu= ', negf%mu
-     write(io,*) 'mu_n= ', negf%mu_n
-     write(io,*) 'mu_p= ', negf%mu_p
-     write(io,*) 'T= ',negf%kbT
+     write(io,*) 'isSid= ',this%isSid
+     write(io,*) 'mu= ', this%mu
+     write(io,*) 'mu_n= ', this%mu_n
+     write(io,*) 'mu_p= ', this%mu_p
+     write(io,*) 'T= ',this%kbT
 
-     do ii = 1, negf%str%num_conts
-       write(io,*) 'Contact Parameters for ',trim(negf%cont(ii)%name)
-       write(io,*) 'mu= ', negf%cont(ii)%mu
-       write(io,*) 'WideBand= ', negf%cont(ii)%FictCont
-       write(io,*) 'DOS= ', negf%cont(ii)%contact_DOS
-       write(io,*) 'mu_n= ', negf%cont(ii)%mu_n
-       write(io,*) 'mu_p= ', negf%cont(ii)%mu_p
-       write(io,*) 'Density Matrix T= ',negf%cont(ii)%kbT_dm
-       write(io,*) 'Transmission T= ',negf%cont(ii)%kbT_t
+     do ii = 1, this%str%num_conts
+       write(io,*) 'Contact Parameters for ',trim(this%cont(ii)%name)
+       write(io,*) 'mu= ', this%cont(ii)%mu
+       write(io,*) 'WideBand= ', this%cont(ii)%FictCont
+       write(io,*) 'DOS= ', this%cont(ii)%contact_DOS
+       write(io,*) 'mu_n= ', this%cont(ii)%mu_n
+       write(io,*) 'mu_p= ', this%cont(ii)%mu_p
+       write(io,*) 'Density Matrix T= ',this%cont(ii)%kbT_dm
+       write(io,*) 'Transmission T= ',this%cont(ii)%kbT_t
      end do
 
      write(io,*) 'Contour Parameters:'
-     write(io,*) 'Ec= ', negf%Ec
-     write(io,*) 'Ev= ', negf%Ev
-     write(io,*) 'DEc= ', negf%DeltaEc
-     write(io,*) 'DEv= ', negf%DeltaEv
-     write(io,*) 'ReadoldDM_SGFs= ',negf%ReadoldDM_SGFs
-     write(io,*) 'ReadoldT_SGF= ',negf%ReadoldT_SGFs
-     write(io,*) 'Np_n= ',negf%Np_n
-     write(io,*) 'Np_p= ', negf%Np_p
-     write(io,*) 'nkT= ', negf%n_kt
-     write(io,*) 'nPoles= ', negf%n_poles
-     write(io,*) 'min_or_max= ', negf%min_or_max
-     write(io,*) 'refcont= ', negf%refcont
+     write(io,*) 'Ec= ', this%Ec
+     write(io,*) 'Ev= ', this%Ev
+     write(io,*) 'DEc= ', this%DeltaEc
+     write(io,*) 'DEv= ', this%DeltaEv
+     write(io,*) 'ReadoldDM_SGFs= ',this%ReadoldDM_SGFs
+     write(io,*) 'ReadoldT_SGF= ',this%ReadoldT_SGFs
+     write(io,*) 'Np_n= ',this%Np_n
+     write(io,*) 'Np_p= ', this%Np_p
+     write(io,*) 'nkT= ', this%n_kt
+     write(io,*) 'nPoles= ', this%n_poles
+     write(io,*) 'min_or_max= ', this%min_or_max
+     write(io,*) 'refcont= ', this%refcont
 
      write(io,*) 'Transmission Parameters:'
-     write(io,*) 'Emin= ',negf%Emin
-     write(io,*) 'Emax= ',negf%Emax
-     write(io,*) 'Estep= ',negf%Estep
-     write(io,*) 'g_spin= ',negf%g_spin
-     write(io,*) 'delta= ',negf%delta
-     write(io,*) 'dos_delta= ',negf%dos_delta
-     write(io,*) 'ni= ', negf%ni
-     write(io,*) 'nf= ', negf%nf
-     write(io,*) 'DorE= ',negf%DorE
+     write(io,*) 'Emin= ',this%Emin
+     write(io,*) 'Emax= ',this%Emax
+     write(io,*) 'Estep= ',this%Estep
+     write(io,*) 'g_spin= ',this%g_spin
+     write(io,*) 'delta= ',this%delta
+     write(io,*) 'dos_delta= ',this%dos_delta
+     write(io,*) 'ni= ', this%ni
+     write(io,*) 'nf= ', this%nf
+     write(io,*) 'DorE= ',this%DorE
 
      write(io,*) 'Internal variables:'
-     write(io,*) 'intHS= ',negf%intHS
-     write(io,*) 'intDM= ',negf%intDM
-     write(io,*) 'kp= ', negf%ikpoint
-     write(io,*) 'wght= ', negf%kwght
-     write(io,*) 'E= ',negf%E
-     write(io,*) 'outer= ', negf%outer
-     write(io,*) 'DOS= ',negf%dos
-     write(io,*) 'Eneconv= ',negf%eneconv
-     write(io,*) 'activecont= ', negf%activecont
+     write(io,*) 'intHS= ',this%intHS
+     write(io,*) 'intDM= ',this%intDM
+     write(io,*) 'kp= ', this%ikpoint
+     write(io,*) 'kwght= ', this%kwght
+     write(io,*) 'E= ',this%E
+     write(io,*) 'outer= ', this%outer
+     write(io,*) 'DOS= ',this%dos
+     write(io,*) 'Eneconv= ',this%eneconv
+     write(io,*) 'activecont= ', this%activecont
   end subroutine print_all_vars
 
 end module lib_param

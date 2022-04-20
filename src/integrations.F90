@@ -32,13 +32,16 @@ module integrations
  use sparsekit_drv
  use inversions
  use iterative
- !use iterative_ph
  use mat_def
  use ln_extract
  use contselfenergy
  use clock
- use elph
  use energy_mesh
+ use interactions
+ use elphinel
+#:if defined("MPI")
+  use libmpifx_module
+#:endif
 
  implicit none
 
@@ -96,17 +99,59 @@ contains
 
   !-----------------------------------------------------------------------
   !-----------------------------------------------------------------------
-  subroutine write_info(verbose,message,Npoints)
+  subroutine write_info(verbose,vbmin,message,int_num)
     integer, intent(in) :: verbose
+    integer, intent(in) :: vbmin
+    character(*), intent(in) :: message
+    integer, optional, intent(in) :: Int_num
+    if (id0 .and. verbose.gt.vbmin) then
+      if (present(int_num)) then    
+        write(6,'(a,a,i0)') message,': ',int_num
+      else
+        write(6,'(a)') message
+      end if
+    end if
+  end subroutine write_info
+  !-----------------------------------------------------------------------
+
+  subroutine write_info_parallel(verbose,vbmin,message,Npoints)
+    integer, intent(in) :: verbose
+    integer, intent(in) :: vbmin
     character(*), intent(in) :: message
     integer, intent(in) :: Npoints
 
-     if (id0 .and. verbose.gt.30) then
+     if (id0 .and. verbose.gt.vbmin) then
        write(6,'(a,a,i0,a,a,i0,a)') message,': ',Npoints,' points ', &
             & ' parallelized on ',numprocs,' processes'
      end if
 
-  end subroutine write_info
+  end subroutine write_info_parallel
+  !-----------------------------------------------------------------------
+
+  subroutine write_real_info(verbose,vbmin,message,rr)
+    integer, intent(in) :: verbose
+    integer, intent(in) :: vbmin
+    character(*), intent(in) :: message
+    real(dp), intent(in) :: rr
+
+     if (id0 .and. verbose.gt.vbmin) then
+       write(6,'(a,a,es12.3)') message,': ',rr
+     end if
+
+  end subroutine write_real_info
+
+  subroutine write_int_info(verbose,vbmin,message,ii)
+    integer, intent(in) :: verbose
+    integer, intent(in) :: vbmin
+    character(*), intent(in) :: message
+    integer, intent(in) :: ii
+
+     if (id0 .and. verbose.gt.vbmin) then
+       write(6,'(a,a,i3)') message,': ',ii
+     end if
+
+  end subroutine write_int_info
+
   !-----------------------------------------------------------------------
   subroutine write_point(verbose,gridpn,Npoints)
     integer, intent(in) :: verbose
@@ -152,7 +197,7 @@ contains
     integer :: Nstep, i, i1, l, kb, ke
     integer :: outer, ncont
 
-    real(dp) :: ncyc
+    real(dp) :: ncyc, scba_error
     complex(dp) :: Ec
     character(6) :: ofKP
     character(1) :: ofSp
@@ -174,7 +219,7 @@ contains
        Ec = negf%en_grid(i)%Ec + j*negf%dos_delta
        negf%iE = negf%en_grid(i)%pt
 
-       call compute_Gr(negf, outer, ncont, Ec, Gr)
+       call compute_Gr(negf, outer, ncont, Ec, Gr, scba_error)
 
        call log_allocate(diag, Gr%nrow)
        call getdiag(Gr,diag)
@@ -234,15 +279,15 @@ contains
     Omega = negf%n_kt * kbT
 
     if (negf%n_poles.eq.0) then
-      Lambda = 0.5d0* kbT * pi
+      Lambda = 0.5_dp* kbT * pi
     else
-      Lambda = 2.d0* negf%n_poles * KbT * pi
+      Lambda = 2.0_dp* negf%n_poles * KbT * pi
     endif
 
     Emin = negf%Ec - negf%DeltaEc
 
-    if ((Emin < (muref + 1.d-3)) .and. &
-        (Emin > (muref - 1.d-3))) then
+    if ((Emin < (muref + 0.001_dp)) .and. &
+        (Emin > (muref - 0.001_dp))) then
        Emin = muref - kbT
     endif
 
@@ -507,8 +552,8 @@ contains
     !---------------------------------------------------------------------
     ioffs = negf%Np_p(1)+negf%Np_p(2)
     do i = 1, Npoles
-      Ec = muref + j * KbT *pi* (2.d0*i - 1.d0)
-      zt = j * KbT * negf%g_spin *(1.d0,0.d0)  !zt is with plus sign because the integration of holes is in the opposite
+      Ec = muref + j * KbT *pi* (2.0_dp*i - 1.0_dp)
+      zt = j * KbT * negf%g_spin *(1.0_dp,0.0_dp)  !zt is with plus sign because the integration of holes is in the opposite
                                                !direction compared to the one of electrons  
       negf%en_grid(ioffs+i)%path = 3
       negf%en_grid(ioffs+i)%pt = ioffs + i
@@ -693,7 +738,7 @@ contains
 
      type(z_CSR) :: GreenR, TmpMt
      integer :: i, i1, ncont, Ntot, outer
-     real(dp) :: ncyc
+     real(dp) :: ncyc, scba_error
      complex(dp) :: Ec, zt
 
      ncont = negf%str%num_conts
@@ -702,7 +747,7 @@ contains
      call create(TmpMt,negf%H%nrow,negf%H%ncol,negf%H%nrow)
      call initialize(TmpMt)
 
-     call write_info(negf%verbose,'CONTOUR INTEGRAL',Ntot)
+     call write_info_parallel(negf%verbose,30,'CONTOUR INTEGRAL',Ntot)
 
      do i = 1, Ntot
 
@@ -715,14 +760,12 @@ contains
 
         if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Green`s funct ')
 
-        call compute_Gr(negf, outer, ncont, Ec, GreenR)
+        call compute_Gr(negf, outer, ncont, Ec, GreenR, scba_error)
 
         if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-        if (allocated(negf%inter)) then
-          if (negf%inter%scba_iter > 0) then
-            call write_info(negf%verbose,'SCBA iterations',negf%inter%scba_iter)
-          end if
+        if (allocated(negf%interactArray)) then
+          call write_real_info(negf%verbose,30,'SCBA error', scba_error)
         end if
 
         if(negf%DorE.eq.'E') zt = zt * Ec
@@ -811,6 +854,7 @@ contains
     !  i1 = i1 + 1
     !end do
     !
+    !np=Ntot/numprocs
     !if (id .ne. numprocs-1) then
     !  negf%local_en_points = np
     !else
@@ -835,7 +879,7 @@ contains
     integer :: i, i1, j1, outer, ncont
 
     real(dp), DIMENSION(:), allocatable :: frm_f
-    real(dp) :: ncyc, Er
+    real(dp) :: ncyc, Er, scba_error
 
     complex(dp) :: zt
     complex(dp) :: Ec
@@ -849,7 +893,7 @@ contains
     call create(TmpMt,negf%H%nrow,negf%H%ncol,negf%H%nrow)
     call initialize(TmpMt)
 
-    call write_info(negf%verbose,'REAL AXIS INTEGRAL',Npoints)
+    call write_info_parallel(negf%verbose,30,'REAL AXIS INTEGRAL',Npoints)
 
     do i = 1, Npoints
 
@@ -867,14 +911,12 @@ contains
 
        if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Green`s funct ')
 
-       call compute_Gn(negf, outer, ncont, Ec, frm_f, Gn)
+       call compute_Gn(negf, outer, ncont, Ec, frm_f, Gn, scba_error)
 
        if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-       if (allocated(negf%inter)) then
-         if (negf%inter%scba_iter > 0) then
-           call write_info(negf%verbose,'SCBA iterations',negf%inter%scba_iter)
-         end if
+       if (allocated(negf%interactArray)) then
+         call write_real_info(negf%verbose,30,'SCBA error',scba_error)
        end if
 
        if(negf%DorE.eq.'E') zt = zt * Er
@@ -882,7 +924,6 @@ contains
        call concat(TmpMt,zt,Gn,1,1)
 
        call destroy(Gn)
-
 
     enddo
 
@@ -1186,10 +1227,23 @@ contains
   subroutine tunneling_int_def(negf)
     type(Tnegf) :: negf
 
-    integer :: i, ncont, Nsteps
+    integer :: i, ncont, Nsteps, np
+    real(dp) :: wqmax
 
-    Nsteps=NINT((negf%Emax-negf%Emin)/negf%Estep) + 1
-    !! Destroy en_grid from previous calculation, if any
+    if (allocated(negf%interactArray)) then
+      wqmax = get_max_wq(negf%interactArray)      
+      print*,'max wq=',wqmax
+      Nsteps=nint((negf%Emax-negf%Emin+wqmax)/negf%Estep) + 1
+      print*,'Emin/Emax=',negf%Emin,negf%Emax,negf%Estep
+      print*,'Nsteps=',Nsteps
+      if (mod(Nsteps,numprocs) .ne. 0) then
+         print*, 'ERROR: MPI energy procs non compatible with number of points'
+      end if
+    else
+      wqmax = 0.0_dp
+      Nsteps=nint((negf%Emax-negf%Emin)/negf%Estep) + 1
+    end if
+
     call destroy_en_grid(negf%en_grid)
     allocate(negf%en_grid(Nsteps))
 
@@ -1200,12 +1254,26 @@ contains
        negf%en_grid(i)%Ec = cmplx(negf%Emin + negf%Estep*(i-1), 0.0, dp)
        negf%en_grid(i)%wght = negf%kwght
     enddo
+    
+    np=Nsteps/numprocs
+    if (id .ne. numprocs-1) then
+      negf%local_en_points = np
+    else
+      negf%local_en_points = np + mod(Nsteps,numprocs)
+    end if
 
-    ! distribute energy grid
-    do i = 0, Nsteps-1
-       negf%en_grid(i+1)%cpu = mod(i,numprocs)
-    enddo
-
+    if (wqmax == 0.0_dp) then 
+      ! distribute energy grid round robin scheme
+      do i = 0, Nsteps-1
+        negf%en_grid(i+1)%cpu = mod(i,numprocs)
+      enddo
+    else  
+      ! With inelastic points must be contigous 
+      do i = 0, numprocs-1
+        negf%en_grid(i*np+1:(i+1)*np)%cpu = i
+      end do      
+    end if  
+    
   end subroutine tunneling_int_def
 
   !-----------------------------------------------------------------------------
@@ -1274,7 +1342,7 @@ contains
     endif
 
     !-------------------------------------------------------
-    call write_info(negf%verbose,'CALCULATION OF COHERENT TRANSMISSION',Nstep)
+    call write_info_parallel(negf%verbose,30,'CALCULATION OF COHERENT TRANSMISSION',Nstep)
 
     !Loop on energy points: tunneling
     do i = 1, Nstep
@@ -1288,6 +1356,7 @@ contains
        if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Contact SE ')
        call compute_contacts(Ec+j*negf%delta,negf,ncyc,Tlc,Tcl,SelfEneR,GS)
        if (id0.and.negf%verbose.gt.VBT) call write_clock
+       call write_int_info(negf%verbose, VBT, 'Average number of iterations', int(ncyc))
 
        if (.not.do_LEDOS) then
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling ')
@@ -1346,15 +1415,12 @@ contains
     type(Tnegf) :: negf
     real(dp), dimension(:), optional :: fixed_occupations
 
-    integer :: scba_iter, i1
-    real(dp) :: ncyc
-    Type(z_DNS), Dimension(MAXNCONT) :: SelfEneR, Tlc, Tcl, GS
-    Real(dp), Dimension(:), allocatable :: curr_mat
-    real(dp), dimension(:), allocatable :: frm
-    integer :: size_ni, ii, Nstep, outer, ncont, npl, j1, icont, jj, ref_bk
+    integer :: scba_iter, scba_niter, size_ni, ref_bk
+    integer :: iE, iK, jj, i1, j1, Nstep, outer, ncont, icont
+    real(dp) :: ncyc, scba_error
+    Type(z_DNS), dimension(MAXNCONT) :: SelfEneR, Tlc, Tcl, GS
+    real(dp), dimension(:), allocatable :: curr_mat, frm
     complex(dp) :: Ec
-    real(dp) :: scba_error
-    Type(z_CSR) :: Gn, Gn_previous
 
     ncont = negf%str%num_conts
     Nstep = size(negf%en_grid)
@@ -1379,72 +1445,100 @@ contains
       frm(1:ncont) = fixed_occupations
     end if
 
-    call write_info(negf%verbose,'CALCULATION OF MEIR-WINGREEN FORMULA',Nstep)
+    call write_info(negf%verbose,30,'CALCULATION OF MEIR-WINGREEN FORMULA',Nstep)
+    ! ---------------------------------------------------------------------
+    ! SCBA Iteration
+    ! ---------------------------------------------------------------------
+    call interaction_prepare(negf)
+    call negf%scbaDriver%init(1.0e-7_dp, .true.)
+    scba_niter = get_max_niter(negf%interactArray)
+    call write_info(negf%verbose, 30, 'NUMBER OF SCBA ITERATIONS', scba_niter)
+    scba_iter = 0
 
-    !! Loop on energy points
-    do ii = 1, Nstep
+    scba: do while (.not.negf%scbaDriver%is_converged() .and. scba_iter <= scba_niter)
 
-      call write_point(negf%verbose, negf%en_grid(ii), size(negf%en_grid))
+      call write_info(negf%verbose, 30, '-----------------------------')
+      call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter)
+      call write_info(negf%verbose, 30, '-----------------------------')
+      
+      call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
 
-      if (negf%en_grid(ii)%cpu /= id) cycle
-      Ec = negf%en_grid(ii)%Ec
-      negf%iE = negf%en_grid(ii)%pt
-      if (.not.present(fixed_occupations)) then
-        do j1 = 1,ncont
-           frm(j1)=fermi(real(Ec), negf%cont(j1)%mu, negf%cont(j1)%kbT_t)
-        enddo
-      end if
+      ! Loop over local k-points
+      kloop: do iK = 1, size(negf%local_k_index)
 
-      if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Contact SE ')
-      call compute_contacts(Ec+j*negf%delta, negf, ncyc, Tlc, Tcl, SelfEneR, GS)
-      if (id0.and.negf%verbose.gt.VBT) call write_clock
+        negf%iKpoint = negf%local_k_index(iK) ! global k index 
+        print*,'k-index: ',negf%iKpoint
+        negf%kwght = negf%kweights(negf%iKpoint)
 
-      ! Calculate the SCBA before meir-wingreen current so el-ph self-energies are stored
-      if (allocated(negf%inter)) then
+        !! Loop over energy points
+        enloop: do iE = 1, Nstep
 
-         do scba_iter = 0, negf%inter%scba_niter
-            negf%inter%scba_iter = scba_iter
-            negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
-            call destroy_all_blk(negf)
-            negf%tDestroyGr = .false.; negf%tDestroyGn = .false.
+          call write_point(negf%verbose, negf%en_grid(iE), size(negf%en_grid))
+          if (negf%en_grid(iE)%cpu /= id) cycle
+          Ec = negf%en_grid(iE)%Ec
+          negf%iE = negf%en_grid(iE)%pt
+      
+          if (.not.present(fixed_occupations)) then
+            do j1 = 1,ncont
+              frm(j1)=fermi(real(Ec), negf%cont(j1)%mu, negf%cont(j1)%kbT_t)
+            enddo
+          end if
 
-            call calculate_Gn_neq_components(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm,Gn,outer)
-            
-            if (negf%inter%scba_iter.ne.0) then
-               scba_error = maxval(abs(Gn%nzval - Gn_previous%nzval))
-               if (scba_error < negf%inter%scba_tol) then
-                  call destroy(Gn)
-                  exit
-               end if
-               call destroy(Gn_previous)
-            end if
-            call clone(Gn,Gn_previous)
-            call destroy(Gn)
-         enddo
+          ! ---------------------------------------------------------------------
+          ! Compute contact GF
+          ! ---------------------------------------------------------------------
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Contact SE ')
+          call compute_contacts(Ec+j*negf%delta, negf, ncyc, Tlc, Tcl, SelfEneR, GS)
+          if (id0.and.negf%verbose.gt.VBT) call write_clock
+          call write_int_info(negf%verbose, VBT, 'Average number of iterations', int(ncyc))
 
-         call destroy(Gn_previous)
+          ! ---------------------------------------------------------------------
+          ! Compute block tri-diagonal Gr and Gn
+          ! ---------------------------------------------------------------------
+          negf%tDestroyGr = .false.; negf%tDestroyGn = .false.
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Gn ')
+          call calculate_Gn_neq_components(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm)
+          if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-         if (id0 .and. negf%verbose .gt. VBT) then
-           if (scba_error < negf%inter%scba_tol) then
-              !write(*,*) "SCBA loop converged in",negf%inter%scba_iter,&
-              !      & " iterations with error",scba_error
-           else
-              write(*,*) "WARNING: SCBA exit with error ",scba_error, &
-                    & "  > ",negf%inter%scba_tol
-           end if
-         end if
-      endif
-            
-      negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
-      call iterative_meir_wingreen(negf,real(Ec),SelfEneR,frm,curr_mat)
-      negf%curr_mat(ii,:) = curr_mat(:) * negf%kwght
+          negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Meir-Wingreen ')
+          call iterative_meir_wingreen(negf,real(Ec),SelfEneR,frm,curr_mat)
+          if (id0.and.negf%verbose.gt.VBT) call write_clock
+   
+          negf%curr_mat(iE,:) = curr_mat(:) * negf%kwght
 
-      if (id0.and.negf%verbose.gt.VBT) call write_clock
-      do icont=1,ncont
-        call destroy(Tlc(icont),Tcl(icont),SelfEneR(icont),GS(icont))
-      enddo
+          do icont=1,ncont
+            call destroy(Tlc(icont),Tcl(icont),SelfEneR(icont),GS(icont))
+          enddo
+        
+        end do enloop
 
-    enddo
+      end do kloop
+      
+      print*,'call compute_electron_current  CPU#', id
+      call electron_current_meir_wingreen(negf)
+      
+      ! ---------------------------------------------------------------------
+      ! COMPUTE SELF-ENERGIES
+      ! ---------------------------------------------------------------------
+      print*,'call compute_Sigmas  CPU#', id
+      call compute_Sigmas(negf)
+
+      !Check SCBA convergence on layer currents
+      print*,'call check J convergence'
+      ! Should we allreduce negf%currents ?
+      call negf%scbaDriver%check_J_convergence(negf%currents)
+
+      ! Clean up caches of G_r and G_n
+      call negf%G_r%destroy()
+      call negf%G_n%destroy()
+      
+      scba_iter = scba_iter + 1
+
+    end do scba
+
+    call interaction_cleanup(negf)
+    call negf%scbaDriver%destroy()
     call log_deallocate(curr_mat)
     call log_deallocate(frm)
     negf%refcont = ref_bk
@@ -1490,61 +1584,162 @@ contains
     negf%refcont = ncont + 1
     call log_allocate(frm, ncont+1)
     frm = 0.0_dp
-    do j1 = 1,ncont
-       frm(j1)=fermi(real(Ec), negf%cont(j1)%mu, negf%cont(j1)%kbT_t)
-    enddo
 
-    !! Loop over energy points
-    enloop: do ii = 1, Nstep
+    ! ---------------------------------------------------------------------
+    ! SCBA Iteration
+    ! ---------------------------------------------------------------------
+    call interaction_prepare(negf)
+    call negf%scbaDriver%init(1.0e-7_dp, .true.)
+    scba_niter = get_max_niter(negf%interactArray)
+    call write_info(negf%verbose, 30, 'NUMBER OF SCBA ITERATIONS', scba_niter)
+    scba_iter = 0
 
-      call write_point(negf%verbose, negf%en_grid(ii), size(negf%en_grid))
-      if (negf%en_grid(ii)%cpu /= id) cycle
-      Ec = negf%en_grid(ii)%Ec
-      negf%iE = negf%en_grid(ii)%pt  ! global energy index
+    scba: do while (.not.negf%scbaDriver%is_converged() .and. scba_iter <= scba_niter)
+
+      call write_info(negf%verbose, 30, '-----------------------------')
+      call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter)
+      call write_info(negf%verbose, 30, '-----------------------------')
+      
+      call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+
+      ! Loop over local k-points
+      kloop: do iK = 1, size(negf%local_k_index)
+
+        negf%iKpoint = negf%local_k_index(iK) ! global k index 
+        print*,'k-index: ',negf%iKpoint
+        negf%kwght = negf%kweights(negf%iKpoint)
+
+        !! Loop over energy points
+        enloop: do ii = 1, Nstep
+
+          call write_point(negf%verbose, negf%en_grid(ii), size(negf%en_grid))
+          if (negf%en_grid(ii)%cpu /= id) cycle
+          Ec = negf%en_grid(ii)%Ec
+          negf%iE = negf%en_grid(ii)%pt  ! global energy index
     
-      ! ---------------------------------------------------------------------
-      ! Compute contact GF
-      ! ---------------------------------------------------------------------
-      if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Contact SE ')
-      call compute_contacts(Ec+j*negf%delta, negf, ncyc, Tlc, Tcl, SelfEneR, GS)
-      if (id0.and.negf%verbose.gt.VBT) call write_clock
-      !call write_int_info(negf%verbose, VBT, 'Average number of iterations', int(ncyc))
+          frm = 0.0_dp
+          do j1 = 1,ncont
+             frm(j1)=fermi(real(Ec), negf%cont(j1)%mu, negf%cont(j1)%kbT_t)
+          enddo
+
+          ! ---------------------------------------------------------------------
+          ! Compute contact GF
+          ! ---------------------------------------------------------------------
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Contact SE ')
+          call compute_contacts(Ec+j*negf%delta, negf, ncyc, Tlc, Tcl, SelfEneR, GS)
+          if (id0.and.negf%verbose.gt.VBT) call write_clock
+          call write_int_info(negf%verbose, VBT, 'Average number of iterations', int(ncyc))
+
+          ! ---------------------------------------------------------------------
+          ! Compute block tri-diagonal Gr and Gn
+          ! ---------------------------------------------------------------------
+          ! Avoids cleanup of Gn and ESH components for later use
+          negf%tDestroyGn = .false.
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Gn ')
+          call calculate_Gn_neq_components(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm)
+          if (id0.and.negf%verbose.gt.VBT) call write_clock
+
+          ! ---------------------------------------------------------------------
+          ! Compute layer-to-layer currents and release memory
+          ! ---------------------------------------------------------------------
+          negf%tDestroyGn = .true.
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Jn,n+1 ')
+          call iterative_layer_current(negf,real(Ec),curr_mat)
+          if (id0.and.negf%verbose.gt.VBT) call write_clock
+
+          negf%curr_mat(ii,:) = curr_mat(:) * negf%kwght
+      
+          do icont=1,ncont
+            call destroy(Tlc(icont),Tcl(icont),SelfEneR(icont),GS(icont))
+          end do
+
+        end do enloop
+
+      end do kloop
+      
+      print*,'call compute_electron_current  CPU#', id
+      call electron_current_meir_wingreen(negf)
 
       ! ---------------------------------------------------------------------
-      ! Compute block tri-diagonal Gr and Gn
-      ! ---------------------------------------------------------------------
-      ! Avoids cleanup of Gn and ESH components for later use
-      negf%tDestroyGn = .false.; negf%tDestroyESH = .false.
-      if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Gn ')
-      call calculate_Gn_neq_components(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm)
-      if (id0.and.negf%verbose.gt.VBT) call write_clock
-
-      ! ---------------------------------------------------------------------
-      ! Compute layer-to-layer currents and release memory
+      ! COMPUTE SELF-ENERGIES
       ! ---------------------------------------------------------------------
       negf%tDestroyGn = .true.; negf%tDestroyESH = .true.
       if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Jn,n+1 ')
       call iterative_layer_current(negf,real(Ec),curr_mat)
       if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-      negf%curr_mat(ii,:) = curr_mat(:) * negf%kwght 
-    
-      do icont=1,ncont
-        call destroy(Tlc(icont),Tcl(icont),SelfEneR(icont),GS(icont))
-      end do
+      !Check SCBA convergence on layer currents
+      print*,'call check J convergence'
+      ! Should we allreduce negf%currents ?
+      call negf%scbaDriver%check_J_convergence(negf%currents)
 
-    end do enloop
+      ! Clean up caches of G_r and G_n
+      call negf%G_r%destroy()
+      call negf%G_n%destroy()
 
+      scba_iter = scba_iter + 1
       
-    print*,'call compute_electron_current  CPU#', id
-    call electron_current_meir_wingreen(negf)
+    end do scba
 
-
+    call interaction_cleanup(negf)
+    call negf%scbaDriver%destroy()
     call log_deallocate(curr_mat)
     call log_deallocate(frm)
     negf%refcont = ref_bk
 
   end subroutine layer_current
+
+  !---------------------------------------------------------------------------
+  subroutine interaction_prepare(negf)
+    type(TNegf) :: negf
+
+    integer :: ii
+    real(dp) :: deltaE
+
+    if (allocated(negf%interactArray)) then
+      do ii = 1, size(negf%interactArray)    
+        select type(pInter => negf%interactArray(ii)%inter)
+        type is(ElPhonInel)
+          deltaE = real(negf%en_grid(2)%Ec - negf%en_grid(1)%Ec)    
+          call ElPhonInel_setEnGrid(pInter, deltaE, size(negf%en_grid), negf%local_en_points)
+          call ElPhonInel_setkpoints(pInter, negf%kpoints, negf%kweights, negf%local_k_index)
+        end select
+      end do
+    end if
+  
+  end subroutine interaction_prepare
+
+  !---------------------------------------------------------------------------
+  subroutine interaction_cleanup(negf)
+    type(TNegf) :: negf
+    integer :: ii
+  
+    if (allocated(negf%interactArray)) then
+      do ii = 1, size(negf%interactArray)    
+        select type(pInter => negf%interactArray(ii)%inter)
+        type is(ElPhonInel)
+           call ElPhonInel_destroy(pInter)
+        end select
+      end do
+    end if
+
+  end subroutine interaction_cleanup
+  
+  !---------------------------------------------------------------------------
+  subroutine compute_sigmas(negf)
+    type(TNegf) :: negf
+
+    integer :: ii
+
+    if (allocated(negf%interactArray)) then
+      associate(intArray => negf%interactArray)
+      do ii = 1, size(intArray)
+          call intArray(ii)%inter%compute_Sigma_r(spin=negf%spin)
+          call intArray(ii)%inter%compute_Sigma_n(spin=negf%spin)
+      end do
+      end associate
+    end if
+  end subroutine compute_sigmas
 
   !---------------------------------------------------------------------------
   !>
@@ -1554,18 +1749,17 @@ contains
   !  working arrays. This routine is used in contour integration and DOS and
   !
   !---------------------------------------------------------------------------
-  subroutine compute_Gr(negf, outer, ncont, Ec, Gr)
+  subroutine compute_Gr(negf, outer, ncont, Ec, Gr, scba_error)
     type(Tnegf), intent(inout) :: negf
-    Type(z_CSR), intent(out) :: Gr
     complex(dp), intent(in) :: Ec
     integer, intent(in) :: outer, ncont
+    Type(z_CSR), intent(out) :: Gr
+    real(dp), intent(out) :: scba_error
 
-    integer :: scba_iter, i1
+    integer :: scba_iter, max_scba_iter, i1
     real(dp) :: ncyc
     Type(z_DNS), Dimension(MAXNCONT) :: SelfEneR, Tlc, Tcl, GS
 
-    real(dp) :: scba_error
-    Type(z_CSR) :: Gr_previous
 
     negf%readOldSGF = negf%readOldDM_SGFs
 
@@ -1573,25 +1767,22 @@ contains
 
     call calculate_Gr(negf,Ec,SelfEneR,Tlc,Tcl,GS,Gr,outer)
 
-    if (allocated(negf%inter)) then
-      if (negf%inter%scba_niter /= 0) then
-        call clone(Gr,Gr_previous)
+    scba_error = 0.0_dp
 
-        do scba_iter = 1, negf%inter%scba_niter
-          negf%inter%scba_iter = scba_iter
-          call destroy(Gr)
-          call calculate_Gr(negf,Ec,SelfEneR,Tlc,Tcl,GS,Gr,outer)
-
-          scba_error = maxval(abs(Gr%nzval - Gr_previous%nzval))
-
-          if (scba_error .lt. negf%inter%scba_tol) then
-            exit
-          end if
-
-          call destroy(Gr_previous)
-          call clone(Gr,Gr_previous)
-        end do
-      end if
+    if (.not.allocated(negf%interactArray)) then
+      max_scba_iter = 0
+    else
+      max_scba_iter = get_max_niter(negf%interactArray)
+      call negf%scbaDriver%init(1.0e-7_dp, .false.)
+      do scba_iter = 1, max_scba_iter
+        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+        call negf%scbaDriver%check_Mat_convergence(Gr)
+        if (negf%scbaDriver%is_converged()) exit
+        call destroy(Gr)
+        call calculate_Gr(negf,Ec,SelfEneR,Tlc,Tcl,GS,Gr,outer)
+      enddo
+      scba_error = negf%scbaDriver%scba_err
+      call negf%scbaDriver%destroy()
     end if
 
     do i1=1,ncont
@@ -1608,22 +1799,18 @@ contains
   !  working arrays.
   !
   !-----------------------------------------------------------------------------
-  subroutine compute_Gn(negf, outer, ncont, Ec, frm, Gn)
+  subroutine compute_Gn(negf, outer, ncont, Ec, frm, Gn, scba_error)
     type(Tnegf), intent(inout) :: negf
-    Type(z_CSR), intent(out) :: Gn
+    integer, intent(in) :: outer, ncont
     complex(dp), intent(in) :: Ec
     real(dp), dimension(:), intent(in) :: frm
+    Type(z_CSR), intent(out) :: Gn
+    real(dp), intent(out) :: scba_error
 
-    integer, intent(in) :: outer, ncont
-    integer :: scba_iter, i1, max_scba_iter
+    integer :: scba_iter, max_scba_iter, i1
     real(dp) :: ncyc
     Type(z_DNS), Dimension(MAXNCONT) :: SelfEneR, Tlc, Tcl, GS
     real(dp) :: Er
-
-    !DAR begin - compute_Gr
-    real(dp) :: scba_error
-    Type(z_CSR) :: Gn_previous
-    !DAR end
 
     negf%readOldSGF = negf%readOldDM_SGFs
     Er = real(Ec,dp)
@@ -1631,26 +1818,25 @@ contains
 
     call calculate_Gn_neq_components(negf, Er, SelfEneR, Tlc, Tcl, GS, frm, Gn, outer)
 
+    scba_error = 0.0_dp
     ! In case of interactions (only elastic supported now) we go into
     ! the Self Consistent Born Approximation loop.
-    if (.not.allocated(negf%inter)) then
+    if (.not.allocated(negf%interactArray)) then
       max_scba_iter = 0
     else
-      max_scba_iter = negf%inter%scba_niter
-      negf%inter%scba_iter = 0
-    end if
+      max_scba_iter = get_max_niter(negf%interactArray)
+      call negf%scbaDriver%init(1.0e-7_dp, .false.)
 
-    do scba_iter = 1, max_scba_iter
-      negf%inter%scba_iter = scba_iter
-      call clone(Gn,Gn_previous)
-      call destroy(Gn)
-      call calculate_Gn_neq_components(negf, Er, SelfEneR, Tlc, Tcl, GS, frm, Gn, outer)
-      scba_error = maxval(abs(Gn%nzval - Gn_previous%nzval))
-      call destroy(Gn_previous)
-      if (scba_error .lt. negf%inter%scba_tol) then
-        exit
-      end if
-    enddo
+      do scba_iter = 1, max_scba_iter
+        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+        call negf%scbaDriver%check_Mat_convergence(Gn)
+        if (negf%scbaDriver%is_converged()) exit
+        call destroy(Gn)
+        call calculate_Gn_neq_components(negf, Er, SelfEneR, Tlc, Tcl, GS, frm, Gn, outer)
+      enddo
+      scba_error = negf%scbaDriver%scba_err
+      call negf%scbaDriver%destroy()
+    end if
 
     do i1=1,ncont
       call destroy(Tlc(i1),Tcl(i1),SelfEneR(i1),GS(i1))
@@ -1674,11 +1860,6 @@ contains
     end if
 
     size_ni = size(negf%tunn_mat,2)
-
-    !print *, 'negf%ni',negf%ni
-    !print *, 'negf%nf',negf%nf
-    !print *, 'negf%ref',negf%refcont
-    !print *, 'negf%cont',size(negf%cont)
 
     ! If previous calculation is there, destroy it
     if (allocated(negf%currents)) call log_deallocate(negf%currents)
@@ -1806,6 +1987,7 @@ contains
        if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Contact SE ')
        call compute_contacts(Ec+j*delta,negf,ncyc,Tlc,Tcl,SelfEneR,GS)
        if (id0.and.negf%verbose.gt.VBT) call write_clock
+       call write_int_info(negf%verbose, VBT, 'Average number of iterations', int(ncyc))
 
 
        if (.not.do_LEDOS) then
@@ -2165,3 +2347,49 @@ contains
   end subroutine swap
 
 end module integrations
+
+
+!      if (allocated(negf%inter)) then
+!
+!         do scba_iter = 0, negf%inter%scba_niter
+!            negf%inter%scba_iter = scba_iter
+!            negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
+!            call destroy_all_blk(negf)
+!            negf%tDestroyGr = .false.; negf%tDestroyGn = .false.
+!
+!            call calculate_Gn_neq_components(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm,Gn,outer)
+!            
+!            if (negf%inter%scba_iter.ne.0) then
+!               scba_error = maxval(abs(Gn%nzval - Gn_previous%nzval))
+!               if (scba_error < negf%inter%scba_tol) then
+!                  call destroy(Gn)
+!                  exit
+!               end if
+!               call destroy(Gn_previous)
+!            end if
+!            call clone(Gn,Gn_previous)
+!            call destroy(Gn)
+!         enddo
+!
+!         call destroy(Gn_previous)
+!
+!         if (id0 .and. negf%verbose .gt. VBT) then
+!           if (scba_error < negf%inter%scba_tol) then
+!              !write(*,*) "SCBA loop converged in",negf%inter%scba_iter,&
+!              !      & " iterations with error",scba_error
+!           else
+!              write(*,*) "WARNING: SCBA exit with error ",scba_error, &
+!                    & "  > ",negf%inter%scba_tol
+!           end if
+!         end if
+!      endif
+!            
+!      negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
+!      call iterative_meir_wingreen(negf,real(Ec),SelfEneR,frm,curr_mat)
+!      negf%curr_mat(ii,:) = curr_mat(:) * negf%kwght
+!
+!      if (id0.and.negf%verbose.gt.VBT) call write_clock
+!      do icont=1,ncont
+!        call destroy(Tlc(icont),Tcl(icont),SelfEneR(icont),GS(icont))
+!      enddo
+

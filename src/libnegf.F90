@@ -37,6 +37,7 @@ module libnegf
  use integrations
  use iso_c_binding
  use system_calls
+ use elph, only : interaction_models
 #:if defined("MPI")
  use libmpifx_module, only : mpifx_comm
 #:endif
@@ -49,8 +50,10 @@ module libnegf
  public :: HAR, eovh, pi, kb, units, set_drop, DELTA_SQ, DELTA_W, DELTA_MINGO ! from ln_constants
  public :: convertCurrent, convertHeatCurrent, convertHeatConductance ! from ln_constants
  public :: Tnegf
- public :: set_bp_dephasing, set_elph_dephasing, set_elph_block_dephasing
- public :: set_elph_s_dephasing, destroy_elph_model
+ public :: set_bp_dephasing
+ public :: set_elph_dephasing, set_elph_block_dephasing, set_elph_s_dephasing
+ public :: set_elph_inelastic
+ public :: interaction_models
  public :: set_clock, write_clock
  public :: writeMemInfo, writePeakInfo
  public :: dns2csr, csr2dns, nzdrop
@@ -59,13 +62,14 @@ module libnegf
 #:if defined("MPI")
  public :: set_energy_comm, set_kpoint_comm, set_cart_comm
  public :: negf_mpi_init, negf_cart_init !from mpi_globals
+ public :: set_kpoints
 #:endif
  public :: set_mpi_bare_comm
 
  !Input and work flow procedures
  public :: lnParams
  public :: init_negf, destroy_negf
- public :: init_contacts, init_structure
+ public :: init_contacts, init_structure, init_basis
  public :: get_params, set_params, set_scratch, set_outpath, create_scratch
  public :: init_ldos, set_ldos_intervals, set_ldos_indexes, set_tun_indexes
 
@@ -222,7 +226,7 @@ contains
   subroutine init_negf(negf)
     type(Tnegf) :: negf
 
-    call set_defaults(negf)
+    call negf%set_defaults()
     negf%form%formatted = .true.
     negf%isSid = .false.
     negf%form%type = "PETSc"
@@ -518,6 +522,20 @@ contains
 
   end subroutine init_structure
 
+
+
+  !> Initialize basis
+  subroutine init_basis(negf, coords, nCentral, matrixIndices)
+    type(Tnegf) :: negf
+    real(dp), intent(in) :: coords(:,:)
+    integer, intent(in) :: nCentral
+    integer, intent(in) :: matrixIndices(:)
+
+    call create_TBasis(negf%basis, coords, nCentral, basisToMatrix=matrixIndices)
+
+  end subroutine init_basis
+
+  !> Initialize contanct data
   subroutine init_contacts(negf, ncont)
     type(Tnegf) :: negf
     integer, intent(in) :: ncont
@@ -553,6 +571,28 @@ contains
     end do
 
   end subroutine init_contacts
+
+  !> subroutine used to setup kpoints
+  !  kpoints(:)  kweights(:)  are global
+  !  local_kindex(:) is a local array storing the local indices
+  subroutine set_kpoints(negf, kpoints, kweights, local_kindex)
+    type(Tnegf) :: negf
+    real(dp), intent(in) :: kpoints(:,:)
+    real(dp), intent(in) :: kweights(:)
+    integer, intent(in) :: local_kindex(:)
+
+    if (size(kpoints,2) /= size(kweights)) then
+       STOP 'Error: size of kpoints do not match'
+    end if
+    call log_allocate(negf%kpoints,3,size(kweights))
+    negf%kpoints = kpoints
+    call log_allocate(negf%kweights,size(kweights))
+    negf%kweights = kweights
+
+    call log_allocate(negf%local_k_index,size(local_kindex))
+    negf%local_k_index = local_kindex
+
+  end subroutine set_kpoints
 
   !!-------------------------------------------------------------------
   !! Get/Set parameters container
@@ -625,11 +665,11 @@ contains
     integer :: idx
 
     select type (sgf => negf%surface_green_cache)
-    type is (TSurfaceGreenCacheDisk)
+    type is (TMatrixCacheDisk)
       idx = 0
-    type is (TSurfaceGreenCacheMem)
+    type is (TMatrixCacheMem)
       idx = 1
-    type is (TSurfaceGreenCacheDummy)
+    type is (TMatrixCacheDummy)
       idx = 2
     class default
       idx = 2
@@ -702,22 +742,32 @@ contains
     ! is changed and the cache type is not, it must be forcibly destroyed
     ! using destroy_surface_green_cache
     tmp = get_surface_green_cache_type(negf)
-    if (params%SGFcache .eq. 0) then
-      if (tmp .ne. 0 .or. .not. allocated(negf%surface_green_cache)) then
-        if (allocated(negf%surface_green_cache)) call negf%surface_green_cache%destroy()
-        negf%surface_green_cache = TSurfaceGreenCacheDisk(scratch_path=negf%scratch_path)
+    select case(params%SGFcache)
+    case(0)
+      if (tmp .ne. 0) then
+        if (allocated(negf%surface_green_cache)) then
+           call negf%surface_green_cache%destroy()
+           deallocate(negf%surface_green_cache)
+        end if
+        negf%surface_green_cache = TMatrixCacheDisk(scratch_path=negf%scratch_path)
       end if
-    else if (params%SGFcache .eq. 1) then
-      if (tmp .ne. 1 .or. .not. allocated(negf%surface_green_cache)) then
-        if (allocated(negf%surface_green_cache)) call negf%surface_green_cache%destroy()
-        negf%surface_green_cache = TSurfaceGreenCacheMem()
+    case(1)
+      if (tmp .ne. 1) then
+        if (allocated(negf%surface_green_cache)) then
+           call negf%surface_green_cache%destroy()
+           deallocate(negf%surface_green_cache)
+        end if
+        negf%surface_green_cache = TMatrixCacheMem(tagname='SurfaceGF')
       end if
-    else
-      if (tmp .ne. 2 .or. .not. allocated(negf%surface_green_cache)) then
-        if (allocated(negf%surface_green_cache)) call negf%surface_green_cache%destroy()
-        negf%surface_green_cache = TSurfaceGreenCacheDummy()
+    case(2)
+      if (tmp .ne. 2) then
+        if (allocated(negf%surface_green_cache)) then
+           call negf%surface_green_cache%destroy()
+           deallocate(negf%surface_green_cache)
+        end if
+        negf%surface_green_cache = TMatrixCacheDummy()
       end if
-    end if
+    end select
 
   end subroutine set_params
 
@@ -736,7 +786,7 @@ contains
  
     ! Update the cache object if needed.
     select type (sgf => negf%surface_green_cache)
-      type is (TSurfaceGreenCacheDisk)
+      type is (TMatrixCacheDisk)
         sgf%scratch_path = negf%scratch_path
     end select
 
@@ -1107,6 +1157,7 @@ contains
 
     call destroy_HS(negf)
     call kill_Tstruct(negf%str)
+    call destroy_TBasis(negf%basis)
     if (allocated(negf%dos_proj)) then
        call destroy_ldos(negf%dos_proj)
     end if
@@ -1123,16 +1174,29 @@ contains
        call log_deallocate(negf%curr_mat)
     end if
     if (allocated(negf%ldos_mat)) then
-       call log_deallocate(negf%ldos_mat)
+         call log_deallocate(negf%ldos_mat)
     end if
     if (allocated(negf%currents)) then
-       call log_deallocate(negf%currents)
+      call log_deallocate(negf%currents)
     end if
-    if (allocated(negf%ni)) deallocate(negf%ni)
-    if (allocated(negf%nf)) deallocate(negf%nf)
+    if (allocated(negf%kpoints)) then
+      call log_deallocate(negf%kpoints)
+    end if
+    if (allocated(negf%kweights)) then
+      call log_deallocate(negf%kweights)
+    end if
+    if (allocated(negf%local_k_index)) then
+      call log_deallocate(negf%local_k_index)
+    end if
+   
+    call negf%destroy_interactions() 
+
     call destroy_DM(negf)
     call destroy_matrices(negf)
+    print*,'destroy_sgf_cache'
     call destroy_surface_green_cache(negf)
+    print*,'destroy_gf_cache'
+    call destroy_green_cache(negf)
     call WriteMemInfo(6)
 
   end subroutine destroy_negf
@@ -1141,9 +1205,25 @@ contains
   subroutine destroy_surface_green_cache(negf)
     type(Tnegf) :: negf
 
-    if (allocated(negf%surface_green_cache)) call negf%surface_green_cache%destroy()
+    if (allocated(negf%surface_green_cache)) then
+          call negf%surface_green_cache%destroy()
+    end if
 
   end subroutine destroy_surface_green_cache
+
+  !> Destroy green cache
+  subroutine destroy_green_cache(negf)
+    type(Tnegf) :: negf
+
+    if (associated(negf%G_r)) then
+      call negf%G_r%destroy()
+      deallocate(negf%G_r)
+    end if
+    if (associated(negf%G_n)) then
+      call negf%G_n%destroy()
+      deallocate(negf%G_n)
+    end if
+  end subroutine destroy_green_cache
 
 
   !--------------------------------------------------------------------
@@ -1518,9 +1598,9 @@ contains
   subroutine compute_current(negf)
     type(Tnegf) :: negf
 
-
-    if ( allocated(negf%inter) .or. negf%tDephasingBP) then
+    if ( allocated(negf%interactArray) .or. negf%tDephasingBP) then
        call compute_meir_wingreen(negf);
+       !call compute_layer_current(negf);
     else
        call compute_landauer(negf);
     endif
@@ -1534,6 +1614,7 @@ contains
   subroutine compute_landauer(negf)
 
     type(Tnegf) :: negf
+
     call extract_cont(negf)
     call tunneling_int_def(negf)
     ! TODO: need a check on elph here, but how to handle exception and messages
@@ -1793,7 +1874,7 @@ contains
   subroutine print_tnegf(negf)
     type(TNegf) :: negf
 
-    call print_all_vars(negf, 6)
+    call negf%print_all_vars(6)
   end subroutine print_tnegf
 
   !////////////////////////////////////////////////////////////////////////

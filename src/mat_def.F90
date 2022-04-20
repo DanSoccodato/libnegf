@@ -33,6 +33,7 @@ public :: r_DNS3, z_DNS3, c_DNS3 ! three indeces matrix (used for storage)
 public :: create, initialize, recreate, destroy, create_id
 public :: print_mat, read_mat, writemem
 public :: createp, destroyp
+public :: assignment(=)
 
 interface create
    module procedure zcreate_CSR
@@ -72,6 +73,14 @@ interface initialize
    module procedure zinit_CSR
 end interface
 
+interface assignment (=)
+   module procedure rassign_CSR
+   module procedure zassign_CSR
+   module procedure rassign_DNS
+   module procedure zassign_DNS
+   module procedure rassign_COO
+   module procedure zassign_COO
+end interface
 
 interface destroy
    module procedure zdestroy_CSR
@@ -1860,6 +1869,70 @@ subroutine zwriteMem_CSR(id,mat)
   write(id,*) 'Memory Used=',mem/dec,str
 
 end subroutine zwriteMem_CSR
+
+
+!> Override assignment operation in order to keep track of memory
+subroutine rassign_CSR(M_lhs, M_rhs)
+  type(r_CSR), intent(inout) :: M_lhs
+  type(r_CSR), intent(in) :: M_rhs
+
+  call create(M_lhs, M_rhs%nrow, M_rhs%ncol, M_rhs%nnz)
+  M_lhs%nzval = M_rhs%nzval
+  M_lhs%colind = M_rhs%colind
+  M_lhs%rowpnt = M_rhs%rowpnt
+end subroutine rassign_CSR
+
+!> Override assignment operation in order to keep track of memory
+subroutine zassign_CSR(M_lhs, M_rhs)
+  type(z_CSR), intent(inout) :: M_lhs
+  type(z_CSR), intent(in) :: M_rhs
+
+  call create(M_lhs, M_rhs%nrow, M_rhs%ncol, M_rhs%nnz)
+  M_lhs%nzval = M_rhs%nzval
+  M_lhs%colind = M_rhs%colind
+  M_lhs%rowpnt = M_rhs%rowpnt
+end subroutine zassign_CSR
+
+
+!> Override assignment operation in order to keep track of memory
+subroutine rassign_DNS(M_lhs, M_rhs)
+  type(r_DNS), intent(inout) :: M_lhs
+  type(r_DNS), intent(in) :: M_rhs
+
+  call create(M_lhs, M_rhs%nrow, M_rhs%ncol)
+  M_lhs%val = M_rhs%val 
+end subroutine rassign_DNS
+
+!> Override assignment operation in order to keep track of memory
+subroutine zassign_DNS(M_lhs, M_rhs)
+  type(z_DNS), intent(inout) :: M_lhs
+  type(z_DNS), intent(in) :: M_rhs
+
+  call create(M_lhs, M_rhs%nrow, M_rhs%ncol)
+  M_lhs%val = M_rhs%val 
+end subroutine zassign_DNS
+
+!> Override assignment operation in order to keep track of memory
+subroutine rassign_COO(M_lhs, M_rhs)
+  type(r_COO), intent(inout) :: M_lhs
+  type(r_COO), intent(in) :: M_rhs
+
+  call create(M_lhs, M_rhs%nrow, M_rhs%ncol, M_rhs%nnz)
+  M_lhs%nzval = M_rhs%nzval
+  M_lhs%index_i = M_rhs%index_i
+  M_lhs%index_j = M_rhs%index_j
+end subroutine rassign_COO
+
+!> Override assignment operation in order to keep track of memory
+subroutine zassign_COO(M_lhs, M_rhs)
+  type(z_COO), intent(inout) :: M_lhs
+  type(z_COO), intent(in) :: M_rhs
+
+  call create(M_lhs, M_rhs%nrow, M_rhs%ncol, M_rhs%nnz)
+  M_lhs%nzval = M_rhs%nzval
+  M_lhs%index_i = M_rhs%index_i
+  M_lhs%index_j = M_rhs%index_j
+end subroutine zassign_COO
 
 
 end module mat_def

@@ -202,6 +202,7 @@ MODULE sparsekit_drv
   interface trace
      module procedure ztrace_csr
      module procedure ztrace_dns
+     module procedure ztrace_arr
   end interface
   interface getelement
      module procedure rgetelm_csr
@@ -216,8 +217,8 @@ MODULE sparsekit_drv
      module procedure zspectral_dns
   end interface
   interface check_if_hermitian
-     module procedure check_hermitian_csr   
-     module procedure check_hermitian_dns   
+     module procedure check_hermitian_csr
+     module procedure check_hermitian_dns
   end interface
 
   integer, parameter :: MISMATCH = 1
@@ -284,11 +285,9 @@ CONTAINS
     ENDIF
 
     IF (sp%nnz.NE.0) THEN
-    !   CALL csrcoo(coo%nrow,3,sp%nzval,sp%nzval,sp%colind,sp%rowpnt,coo%nzval, &
-    !        coo%nzval,coo%index_i,coo%index_j,ierr)
-       CALL csrcoo(coo%nrow,3,sp%nnz,sp%nzval,sp%colind,sp%rowpnt,coo%nnz,coo%nzval,coo%index_i,coo%index_j,ierr)
 
-
+       CALL csrcoo(coo%nrow,3,sp%nnz,sp%nzval,sp%colind,sp%rowpnt,coo%nnz,coo%nzval, &
+             & coo%index_i,coo%index_j,ierr)
     ENDIF
 
   END SUBROUTINE rcsrcoo_st
@@ -2490,8 +2489,8 @@ CONTAINS
 
     IF ((i1.GT.i2).OR.(j1.GT.j2).OR.(i2.GT.A_csr%nrow).OR.(j2.GT.A_csr%ncol)) THEN
        print*, 'ERROR (zextract_csr): bad indeces specification';
-       print*, 'Trying to extract block from matrix',A_csr%nrow,'x',A_csr%ncol  
-       print*, 'Indices Rows',i1,i2,'Cols',j1,j2  
+       print*, 'Trying to extract block from matrix',A_csr%nrow,'x',A_csr%ncol
+       print*, 'Indices Rows',i1,i2,'Cols',j1,j2
        STOP
     ENDIF
 
@@ -2519,9 +2518,9 @@ CONTAINS
 
     IF ((i1.GT.i2).OR.(j1.GT.j2).OR.(i2.GT.A_csr%nrow).OR.(j2.GT.A_csr%ncol)) THEN
        print*, 'ERROR (zextract_dns): bad indeces specification';
-       print*, 'Trying to extract block from matrix',A_csr%nrow,'x',A_csr%ncol  
-       print*, 'Indices Rows',i1,i2,'Cols',j1,j2  
-       STOP 
+       print*, 'Trying to extract block from matrix',A_csr%nrow,'x',A_csr%ncol
+       print*, 'Indices Rows',i1,i2,'Cols',j1,j2
+       STOP
     ENDIF
 
     call create(A_dns,(i2-i1+1),(j2-j1+1))
@@ -3152,7 +3151,7 @@ CONTAINS
     complex(dp) :: trace
 
     integer :: i
-    
+
     trace = (0.d0,0.d0)
     if (present(mask)) then
        if (size(mask) /= mat%nrow) then
@@ -3161,7 +3160,7 @@ CONTAINS
        do i = 1,mat%nrow
           if (mask(i)) then
              trace = trace + mat%val(i,i)
-          end if   
+          end if
        end do
     else
        do i = 1,mat%nrow
@@ -3170,6 +3169,32 @@ CONTAINS
     end if
 
   end function ztrace_dns
+
+!---------------------------------------------
+
+  function ztrace_arr(mat, mask) result (tr)
+    complex(dp), intent(in) :: mat(:,:)
+    logical, intent(in), optional :: mask(:)
+    complex(dp) :: tr
+
+    integer :: ii
+    tr = (0.0_dp, 0.0_dp)
+    if (present(mask)) then
+       if (size(mask) /= size(mat,1)) then
+          stop 'Error in ztrace_csr: size(mask) /= nrow'
+       end if
+       do ii = 1, size(mat,1)
+         if (mask(ii)) then
+           tr = tr + mat(ii, ii)
+         end if
+       end do
+    else
+       do ii = 1, size(mat,1)
+           tr = tr + mat(ii, ii)
+       end do
+    end if
+
+  end function ztrace_arr
 
 !---------------------------------------------
 
