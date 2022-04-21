@@ -36,7 +36,7 @@ module ContSelfEnergy
  use clock
  use mpi_globals
  use complexbands
- use ln_cache, only : TMatLabel
+ use ln_cache, only : TMatLabel, get_string_label
 #:if defined("MPI")
  use libmpifx_module, only : mpifx_reduceip
 #:endif
@@ -87,7 +87,7 @@ contains
                                ! flag=1 Compute
                                ! flag=2 Compute and save
     real(kind=dp) :: dens
-    character(5) :: ofpnt
+    character(10) :: ofpnt
     logical :: lex
     type(TMatLabel) :: label
 
@@ -114,10 +114,7 @@ contains
 
     lex = pnegf%surface_green_cache%is_cached(label)
 
-    if (pnt.gt.0.and.pnt.le.999) write(ofpnt,'(i3.3)') pnt
-    if (pnt.gt.999.and.pnt.le.9999) write(ofpnt,'(i4.4)') pnt
-    if (pnt.gt.9999.and.pnt.le.99999) write(ofpnt,'(i5.5)') pnt
-
+    call get_string_label(pnt, ofpnt)
 
     if (.not.lex .and. flag.eq.0) then
         flag = 2
@@ -130,7 +127,7 @@ contains
     endif
 
     call create(GS,ngs,ngs)
-    GS%val=(0.D0,0.D0)
+    GS%val=zero
 
     !.......... Ficticious contact ....................
     if(pnegf%cont(ii)%FictCont) then

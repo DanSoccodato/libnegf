@@ -590,7 +590,7 @@ contains
     call log_allocate(negf%kpoints,3,size(kweights))
     negf%kpoints = kpoints
     if (allocated(negf%kweights)) then
-       call log_deallocate(negf%weights)
+       call log_deallocate(negf%kweights)
     end if   
     call log_allocate(negf%kweights,size(kweights))
     negf%kweights = kweights

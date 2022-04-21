@@ -1090,13 +1090,13 @@ contains
 
     m=(n+1)/2
 
-    xm=0.5d0*(x2+x1)
-    xl=0.5d0*(x2-x1)
+    xm=0.5_dp*(x2+x1)
+    xl=0.5_dp*(x2-x1)
 
     do i=1,m
 
        ! Approssimazione degli zeri dei polinomi di Legendre:
-       z=cos(Pi*(i-0.2.0_dp)/(n+0.5d0))
+       z=cos(Pi*(i-0.25_dp)/(n+0.5_dp))
 
        ! Legendre polynomial, p1, evaluated by rec. relations:
        ! P(0)=1; P(-1)=0
@@ -1585,6 +1585,7 @@ contains
     call log_allocate(frm, ncont+1)
     frm = 0.0_dp
 
+    call write_info(negf%verbose,30,'CALCULATION OF LAYER CURRENTS',Nstep)
     ! ---------------------------------------------------------------------
     ! SCBA Iteration
     ! ---------------------------------------------------------------------

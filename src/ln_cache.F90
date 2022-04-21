@@ -33,6 +33,7 @@ module ln_cache
   public :: TMatrixCacheDummy
   public :: TMatLabel
   public :: print_label
+  public :: get_string_label
 
   type TMatLabel
     integer :: kpoint = -1
@@ -485,14 +486,8 @@ contains
     write (ofrow, '(i2.2)') label%row_block
     write (ofcol, '(i2.2)') label%col_block
 
-    if (label%kpoint .le. 99) write (ofkpnt, '(i2.2)') label%kpoint
-    if (label%kpoint .gt. 99) write (ofkpnt, '(i3.3)') label%kpoint
-    if (label%kpoint .gt. 999) write (ofkpnt, '(i4.4)') label%kpoint
-    if (label%kpoint .gt. 9999) stop 'ERROR: too many k-points (> 9999)'
-    if (label%energy_point .le. 999) write (ofEpnt, '(i3.3)') label%energy_point
-    if (label%energy_point .gt. 999) write (ofEpnt, '(i4.4)') label%energy_point
-    if (label%energy_point .gt. 9999) write (ofEpnt, '(i5.5)') label%energy_point
-    if (label%energy_point .gt. 99999) stop 'ERROR: too many contour points (> 99999)'
+    call get_string_label(label%kpoint, ofkpnt)
+    call get_string_label(label%energy_point, ofEpnt)
     if (label%spin .eq. 1) ofspin = 'u'
     if (label%spin .eq. 2) ofspin = 'd'
     filename = 'Mat'//ofspin//ofrow//'_'//ofcol//'_'//trim(ofkpnt)//'_'//trim(ofEpnt)//'.dat'
@@ -558,4 +553,18 @@ contains
   subroutine dummy_destroy(this)
     class(TMatrixCacheDummy) :: this
   end subroutine
+
+  ! utility to obtain a 0-padded integer label
+  subroutine get_string_label(int_label, str_label)
+    integer, intent(in) :: int_label
+    character(*), intent(inout) :: str_label
+    if (int_label .le. 99) write (str_label, '(i2.2)') int_label
+    if (int_label .gt. 99) write (str_label, '(i3.3)') int_label
+    if (int_label .gt. 999) write (str_label, '(i4.4)') int_label
+    if (int_label .gt. 9999) write (str_label, '(i5.5)') int_label
+    if (int_label .gt. 99999) write (str_label, '(i6.6)') int_label
+    if (int_label .gt. 999999) write (str_label, '(i7.7)') int_label
+    if (int_label .gt. 9999999) stop 'ERROR: label too large (> 9999999)'
+  end subroutine get_string_label
+
 end module

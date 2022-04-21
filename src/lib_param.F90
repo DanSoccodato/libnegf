@@ -280,6 +280,10 @@ contains
     integer, intent(in) :: niter
 
     integer :: ii
+
+    if (.not.allocated(negf%interactArray)) then
+       stop 'ERROR: interactArray not allocated'
+    end if   
     ii = negf%get_empty_slot()
     if (ii > size(negf%interactArray)) then
        stop 'ERROR: empty slot not found'
