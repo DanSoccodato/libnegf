@@ -208,7 +208,7 @@ contains
     Nstep = size(negf%en_grid)
 
     call log_allocate(negf%ldos_mat, Nstep, negf%ndos_proj)
-    negf%ldos_mat(:,:)=0.d0
+    negf%ldos_mat(:,:)=0.0_dp
 
     do i = 1, Nstep
 
@@ -318,12 +318,12 @@ contains
     allocate(wght(negf%Np_n(1)))
     allocate(pnts(negf%Np_n(1)))
 
-    call gauleg(0.d0,1.d0,pnts,wght,negf%Np_n(1))
+    call gauleg(0.0_dp,1.0_dp,pnts,wght,negf%Np_n(1))
 
     do i = 1, negf%Np_n(1)
       Ec = z1 + pnts(i) * z_diff
       ff = fermi(Ec,muref,KbT)
-      zt = negf%g_spin * z_diff * ff * wght(i) / (2.d0 *pi)
+      zt = negf%g_spin * z_diff * ff * wght(i) / (2.0_dp *pi)
 
       negf%en_grid(i)%path = 1
       negf%en_grid(i)%pt = i
@@ -348,7 +348,7 @@ contains
     allocate(wght(negf%Np_n(2)))
     allocate(pnts(negf%Np_n(2)))
 
-    call gauleg(0.d0,1.d0,pnts,wght,negf%Np_n(2))    !Setting weights for integration
+    call gauleg(0.0_dp,1.0_dp,pnts,wght,negf%Np_n(2))    !Setting weights for integration
 
     z1 = z2
     z2 = muref + Omega + j*Lambda
@@ -360,7 +360,7 @@ contains
     do i = 1, negf%Np_n(2)
       Ec = z1 + pnts(i) * z_diff
       ff = fermi(Ec,muref,KbT)
-      zt = negf%g_spin * z_diff * ff * wght(i) / (2.d0 *pi)
+      zt = negf%g_spin * z_diff * ff * wght(i) / (2.0_dp *pi)
 
       negf%en_grid(ioffs+i)%path = 2
       negf%en_grid(ioffs+i)%pt = ioffs + i
@@ -385,8 +385,8 @@ contains
     ioffs = negf%Np_n(1)+negf%Np_n(2)
 
     do i = 1, Npoles
-      Ec = muref + j * KbT *pi* (2.d0*i - 1.d0)
-      zt= -j * KbT * negf%g_spin *(1.d0,0.d0)
+      Ec = muref + j * KbT *pi* (2.0_dp*i - 1.0_dp)
+      zt= -j * KbT * negf%g_spin *(1.0_dp,0.0_dp)
 
       negf%en_grid(ioffs+i)%path = 3
       negf%en_grid(ioffs+i)%pt = ioffs + i
@@ -449,7 +449,7 @@ contains
     if (negf%n_poles.eq.0) then
       Lambda = 0.5d0* kbT * pi
     else
-      Lambda = 2.d0* negf%n_poles * KbT * pi
+      Lambda = 2.0_dp* negf%n_poles * KbT * pi
     endif
 
     Emax = negf%Ev + negf%DeltaEv
@@ -486,12 +486,12 @@ contains
     allocate(wght(negf%Np_p(1)))
     allocate(pnts(negf%Np_p(1)))
 
-    call gauleg(0.d0,1.d0,pnts,wght,negf%Np_p(1))
+    call gauleg(0.0_dp,1.0_dp,pnts,wght,negf%Np_p(1))
 
     do i = 1, negf%Np_p(1)
       Ec = z1 + pnts(i) * z_diff
       ff = fermi(-Ec,-muref,KbT)   ! 1-f(E-muref)
-      zt = - negf%g_spin * z_diff * ff * wght(i) / (2.d0 *pi) !zt is with minus sign because the integration of holes is in
+      zt = - negf%g_spin * z_diff * ff * wght(i) / (2.0_dp *pi) !zt is with minus sign because the integration of holes is in
                                                               !the opposite direction compared to the one of electrons
       negf%en_grid(i)%path = 1
       negf%en_grid(i)%pt = i
@@ -516,7 +516,7 @@ contains
     allocate(wght(negf%Np_p(2)))
     allocate(pnts(negf%Np_p(2)))
 
-    call gauleg(0.d0,1.d0,pnts,wght,negf%Np_p(2))    !Setting weights for integration
+    call gauleg(0.0_dp,1.0_dp,pnts,wght,negf%Np_p(2))    !Setting weights for integration
 
     z1 = z2
     z2 = muref - Omega + j*Lambda
@@ -528,7 +528,7 @@ contains
     do i = 1, negf%Np_p(2)
       Ec = z1 + pnts(i) * z_diff
       ff = fermi(-Ec,-muref,KbT)
-      zt = - negf%g_spin * z_diff * ff * wght(i) / (2.d0 *pi)  !zt is with minus sign because the integration of holes is in  
+      zt = - negf%g_spin * z_diff * ff * wght(i) / (2.0_dp *pi)  !zt is with minus sign because the integration of holes is in  
                                                                !the opposite direction compared to the one of electrons 
       negf%en_grid(ioffs+i)%path = 2
       negf%en_grid(ioffs+i)%pt = ioffs + i
@@ -608,7 +608,7 @@ contains
      end if
      muref = negf%muref
      nkT = negf%n_kt * kbT
-     Lambda = 2.d0* negf%n_poles * KbT * pi
+     Lambda = 2.0_dp* negf%n_poles * KbT * pi
      mumin = muref - nkT
      Elow = negf%Ec
 
@@ -626,9 +626,9 @@ contains
      !  --- [ | Gr(z) dz  ] =  --- [ | iGr(t)Re  dt ]
      !  2pi [ /           ]    2pi [ /              ]
      !----------------------------------------------------
-     Centre = (Lambda**2-Elow**2+(mumin)**2)/(2.d0*(mumin-Elow))
+     Centre = (Lambda**2-Elow**2+(mumin)**2)/(2.0_dp*(mumin-Elow))
      Rad = Centre - Elow
-     if (kbT.ne.0.d0) then
+     if (kbT.ne.0.0_dp) then
         alpha = atan(Lambda/(mumin-Centre))
      else
         alpha = 0.1d0*pi
@@ -642,7 +642,7 @@ contains
      do i = 1, negf%Np_n(1)
         Pc = Rad*exp(j*pnts(i))
         Ec = Centre+Pc
-        zt = j * Pc * negf%g_spin * wght(i)/(2.d0*pi)
+        zt = j * Pc * negf%g_spin * wght(i)/(2.0_dp*pi)
         negf%en_grid(i)%path=1
         negf%en_grid(i)%pt_path=i
         negf%en_grid(i)%pt=i
@@ -672,27 +672,27 @@ contains
      allocate(wght(negf%Np_n(2)))
      allocate(pnts(negf%Np_n(2)))
 
-     if (kbT.eq.0.d0) then                        ! Circle integration T=0
-       call  gauleg(alpha,0.d0,pnts,wght,negf%Np_n(2))
+     if (kbT.eq.0.0_dp) then                        ! Circle integration T=0
+       call  gauleg(alpha,0.0_dp,pnts,wght,negf%Np_n(2))
      else                                          ! Segment integration T>0
        z1 = muref + nkT + j*Lambda
        z2 = muref - nkT + j*Lambda
        z_diff = z2 - z1
-       call  gauleg(1.d0,0.d0,pnts,wght,negf%Np_n(2))    !Setting weights for integration
+       call  gauleg(1.0_dp,0.0_dp,pnts,wght,negf%Np_n(2))    !Setting weights for integration
      endif
 
      ioffs = negf%Np_n(1)
 
      do i = 1, negf%Np_n(2)
-        if (kbT.eq.0.d0) then                  ! Circle integration T=0
+        if (kbT.eq.0.0_dp) then                  ! Circle integration T=0
            Pc = Rad*exp(j*pnts(i))
            Ec = Centre+Pc
-           dt = negf%g_spin*wght(i)/(2.d0*pi)
+           dt = negf%g_spin*wght(i)/(2.0_dp*pi)
            zt = dt*Pc*j
         else                                        ! Segment integration T>0
            Ec = z1 + pnts(i)*z_diff
            ff = fermi(Ec,muref,KbT)
-           zt = negf%g_spin * z_diff * ff * wght(i) / (2.d0 *pi)
+           zt = negf%g_spin * z_diff * ff * wght(i) / (2.0_dp *pi)
         endif
         negf%en_grid(ioffs+i)%path=2
         negf%en_grid(ioffs+i)%pt_path=ioffs+i
@@ -712,7 +712,7 @@ contains
      !---------------------------------------------------------------------
      ioffs = negf%Np_n(1)+negf%Np_n(2)
      do i = 1, negf%n_poles
-        Ec = muref + j * KbT *pi* (2.d0*real(i,dp) - 1.d0)
+        Ec = muref + j * KbT *pi* (2.0_dp*real(i,dp) - 1.0_dp)
         zt= -j*negf%g_spin*KbT
         negf%en_grid(ioffs+i)%path=3
         negf%en_grid(ioffs+i)%pt_path=ioffs+i
@@ -835,7 +835,7 @@ contains
        negf%en_grid(i)%pt = ioffset + i
        negf%en_grid(i)%pt_path = i
        negf%en_grid(i)%Ec = cmplx(pnts(i),negf%delta,dp)
-       negf%en_grid(i)%wght = negf%kwght * negf%g_spin * wght(i)/(2.d0 *pi)
+       negf%en_grid(i)%wght = negf%kwght * negf%g_spin * wght(i)/(2.0_dp *pi)
     enddo
 
     deallocate(wght)
@@ -997,7 +997,7 @@ contains
        negf%en_grid(i)%pt_path = i
        negf%en_grid(i)%Ec = cmplx(pnts(i),negf%delta,dp)
        ff = fermi(pnts(i),muref,KbT)
-       negf%en_grid(i)%wght = negf%g_spin * negf%kwght * ff * wght(i) / (2.d0 * pi)
+       negf%en_grid(i)%wght = negf%g_spin * negf%kwght * ff * wght(i) / (2.0_dp * pi)
     enddo
 
     deallocate(wght)
@@ -1061,7 +1061,7 @@ contains
        negf%en_grid(i)%pt_path = i
        negf%en_grid(i)%Ec = cmplx(pnts(i),negf%delta,dp)
        ff = fermi(-pnts(i),-muref,KbT)
-       negf%en_grid(i)%wght = negf%g_spin * negf%kwght * ff * wght(i) / (2.d0 * pi)
+       negf%en_grid(i)%wght = negf%g_spin * negf%kwght * ff * wght(i) / (2.0_dp * pi)
     enddo
 
     deallocate(wght)
@@ -1096,7 +1096,7 @@ contains
     do i=1,m
 
        ! Approssimazione degli zeri dei polinomi di Legendre:
-       z=cos(Pi*(i-0.25d0)/(n+0.5d0))
+       z=cos(Pi*(i-0.2.0_dp)/(n+0.5d0))
 
        ! Legendre polynomial, p1, evaluated by rec. relations:
        ! P(0)=1; P(-1)=0
@@ -1108,17 +1108,17 @@ contains
        ! Newton method is used to refine the zeros
        !
        do
-          p0=1.d0  !p(0)
-          p1=0.d0  !p(-1)
+          p0=1.0_dp  !p(0)
+          p1=0.0_dp  !p(-1)
 
           ! Legendre polynomial p1 evaluated by rec. relations:
           do k=1,n
              p2=p1 !p(-2)=p(-1)
              p1=p0 !p(-1)=p(0)
-             p0=((2.d0*k-1.d0)*z*p1-(k-1.d0)*p2)/k
+             p0=((2.0_dp*k-1.0_dp)*z*p1-(k-1.0_dp)*p2)/k
           enddo
 
-          pp=n*(z*p0-p1)/(z*z-1.d0)
+          pp=n*(z*p0-p1)/(z*z-1.0_dp)
 
           ! Newton method to refine the zeros:
           z1=z
@@ -1130,7 +1130,7 @@ contains
        ! Scale the interval to x1..x2:
        x(i)=xm-xl*z
        x(n+1-i)=xm+xl*z
-       w(i)=2.d0*xl/((1.d0-z*z)*pp*pp)
+       w(i)=2.0_dp*xl/((1.0_dp-z*z)*pp*pp)
        w(n+1-i)=w(i)
     enddo
 
@@ -1338,7 +1338,7 @@ contains
        end if
        call log_allocate(negf%ldos_mat,Nstep,negf%ndos_proj)
        call log_allocate(LEDOS,negf%ndos_proj)
-       negf%ldos_mat(:,:)=0.d0
+       negf%ldos_mat(:,:)=0.0_dp
     endif
 
     !-------------------------------------------------------
@@ -1367,7 +1367,7 @@ contains
           negf%tunn_mat(i,:) = TUN_MAT(:) * negf%kwght
        else
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling and DOS')
-          LEDOS(:) = 0.d0
+          LEDOS(:) = 0.0_dp
 
           call calculate_transmissions_and_dos(negf%H,negf%S,Ec,SelfEneR,GS,negf%ni,negf%nf, &
                              & negf%str, negf%tun_proj, TUN_MAT, negf%dos_proj, LEDOS)
@@ -1865,7 +1865,7 @@ contains
     if (allocated(negf%currents)) call log_deallocate(negf%currents)
     call log_allocate(negf%currents,size_ni)
 
-    negf%currents=0.d0
+    negf%currents=0.0_dp
 
     if (size(negf%cont) < 2) then
       return
@@ -1902,7 +1902,7 @@ contains
     if (allocated(negf%currents)) call log_deallocate(negf%currents)
     call log_allocate(negf%currents,size_ni)
 
-    negf%currents=0.d0
+    negf%currents=0.0_dp
     do ii=1,size_ni
        negf%currents(ii)= integrate_el_meir_wingreen(negf%curr_mat(:,ii), &
                           & negf%Emin, negf%Emax, negf%Estep) * negf%g_spin
@@ -1961,7 +1961,7 @@ contains
     if (do_LEDOS) then
        call log_allocate(negf%ldos_mat,Nstep,negf%ndos_proj)
        call log_allocate(LEDOS,negf%ndos_proj)
-       negf%ldos_mat(:,:)=0.d0
+       negf%ldos_mat(:,:)=0.0_dp
     endif
     !-------------------------------------------------------
 
@@ -1999,7 +1999,7 @@ contains
           negf%tunn_mat(i,:) = TUN_MAT(:) * negf%kwght
        else
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling and DOS')
-          LEDOS(:) = 0.d0
+          LEDOS(:) = 0.0_dp
 
           call calculate_transmissions_and_dos(negf%H,negf%S,Ec,SelfEneR,GS,negf%ni,negf%nf, &
                              & negf%str, negf%tun_proj, TUN_MAT, negf%dos_proj, LEDOS)
@@ -2031,7 +2031,7 @@ contains
     size_ni = size(negf%tunn_mat,2)
 
     call log_allocate(negf%currents,size_ni)
-    negf%currents=0.d0
+    negf%currents=0.0_dp
 
     do ii=1,size_ni
        ni = negf%ni(ii); nf = negf%nf(ii)
@@ -2066,7 +2066,7 @@ contains
     INTEGER :: i,i1,N,Nstep,imin,imax
     logical :: swapped
 
-    curr=0.d0
+    curr=0.0_dp
     N=0
     destep=1.0d10
     Nstep=NINT((emax-emin)/estep);
@@ -2122,13 +2122,13 @@ contains
           c1=(fermi(E3,mu2,KbT2)-fermi(E3,mu1,KbT1))*TT3
           c2=(fermi(E4,mu2,KbT2)-fermi(E4,mu1,KbT1))*TT4
 
-          curr=curr+(c1+c2)*(E4-E3)/2.d0
+          curr=curr+(c1+c2)*(E4-E3)/2.0_dp
 
        enddo
 
     enddo
 
-    if (swapped) curr = -1.d0*curr
+    if (swapped) curr = -1.0_dp*curr
     integrate_el = curr
 
   end function integrate_el
@@ -2149,7 +2149,7 @@ contains
     REAL(dp) :: E1,E2,c1,c2,curr
     INTEGER :: i,i1,N,Nstep,imin,imax
 
-    curr=0.d0
+    curr=0.0_dp
     N=0
     Nstep=NINT((emax-emin)/estep);
 
@@ -2164,7 +2164,7 @@ contains
        E2=emin+estep*(i+1)
        TT2=TUN_TOT(i+2)
 
-       curr=curr+(TT1+TT2)*(E2-E1)/2.d0
+       curr=curr+(TT1+TT2)*(E2-E1)/2.0_dp
 
     enddo
 
@@ -2191,9 +2191,9 @@ contains
     REAL(dp) :: E1,E2,c1,c2,curr
     INTEGER :: i,i1,N,Nstep,imin,imax
 
-    curr=0.d0
+    curr=0.0_dp
     N=0
-    destep=1.0d10
+    destep=1.0e10_dp
     Nstep=NINT((emax-emin)/estep);
 
     if (kT1.lt.0.01_dp*Kb) then
@@ -2237,7 +2237,7 @@ contains
           c1=(bose(E3,KbT2)-bose(E3,KbT1))*TT3
           c2=(bose(E4,KbT2)-bose(E4,KbT1))*TT4
 
-          curr=curr+(c1+c2)*(E4-E3)*(E4-E3)/2.d0
+          curr=curr+(c1+c2)*(E4-E3)*(E4-E3)/2.0_dp
 
        enddo
 
@@ -2260,7 +2260,7 @@ contains
     REAL(dp) :: E1,E2,c1,c2,curr
     INTEGER :: i,i1,N,Nstep,imin,imax
 
-    curr=0.d0
+    curr=0.0_dp
     Nstep=NINT((emax-emin)/estep);
 
     TT1=TUN_TOT(1)
@@ -2269,13 +2269,13 @@ contains
       E2=emin*(i+1)/10
       c1=diff_bose(E1,kbT)*TT1
       c2=diff_bose(E2,kbT)*TT1
-      curr=curr+(c1+c2)*emin/20.d0
+      curr=curr+(c1+c2)*emin/20.0_dp
     end do
 
     ! performs the integration with simple trapezium rule.
 !    do i=1,100
 
-!       TT1=10.d0+3.0*(i-1)
+!       TT1=10.0_dp+3.0*(i-1)
 
        ! Within each substep the tunneling is linearly interpolated
        ! Possibly perform a cubic-spline interpolation in future
@@ -2289,7 +2289,7 @@ contains
          c1=diff_bose(E1,kbT)*TT1
          c2=diff_bose(E2,kbT)*TT2
 
-         curr=curr+(c1+c2)*estep/2.d0
+         curr=curr+(c1+c2)*estep/2.0_dp
        enddo
 !    enddo
 
@@ -2308,7 +2308,7 @@ contains
     real(dp) :: dd
 
     nrow = negf%S%nrow
-    qmulli = 0.d0
+    qmulli = 0.0_dp
 
     ! Partial Sum_j[G_ij S_ji]
     do ii=1, nrow
@@ -2328,7 +2328,7 @@ contains
     !.............................................................
     ! Calculation of total charge
 
-    qtot = 0.d0
+    qtot = 0.0_dp
     do ii = 1,nrow
       qtot = qtot+qmulli(ii)
     enddo

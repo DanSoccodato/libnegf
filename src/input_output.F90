@@ -245,7 +245,7 @@ subroutine read_H(idR,idI, zmat,fmt)
   !COO-CSR conversion 
   CALL create(zmat,mat2%nrow,mat2%ncol,mat2%nnz)
 
-  zmat%nzval=(0.d0,0.d0)
+  zmat%nzval=(0.0_dp,0.0_dp)
 
   CALL coo2csr(mat2,zmat)
 

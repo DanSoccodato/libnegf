@@ -104,7 +104,7 @@ module libnegf
                                           ! run total current calculation
  public :: layer_current            ! computes the layer-to-layer current
 
- public ::  write_tunneling_and_dos ! Print tunneling and dot to file
+ public :: write_tunneling_and_dos  ! Print tunneling and dot to file
                                     ! Note: for debug purpose. I/O should be managed
                                     ! by calling program
  public :: compute_ldos             ! wrapping to compute ldos
@@ -557,15 +557,15 @@ contains
       ! Whether the contacts are ficticious and DOS to be used if the contact is
       ! ficticious.
       negf%cont(ii)%FictCont = .false.
-      negf%cont(ii)%contact_DOS = 0.d0
+      negf%cont(ii)%contact_DOS = 0.0_dp
       ! Electrochemical potentials.
-      negf%cont(ii)%mu = 0.d0
-      negf%cont(ii)%mu_n = 0.d0
-      negf%cont(ii)%mu_p = 0.d0
+      negf%cont(ii)%mu = 0.0_dp
+      negf%cont(ii)%mu_n = 0.0_dp
+      negf%cont(ii)%mu_p = 0.0_dp
       ! Electronic temperature for the density matrix calculation.
-      negf%cont(ii)%kbT_dm = 0.d0
+      negf%cont(ii)%kbT_dm = 0.0_dp
        ! Electronic temperature for the transmission calculation.
-      negf%cont(ii)%kbT_t = 0.d0
+      negf%cont(ii)%kbT_t = 0.0_dp
       ! Initialize the names to a default ContactXX, where XX is an index.
       write (negf%cont(ii)%name , "(A7, I2.2)") "Contact", ii
     end do
@@ -584,11 +584,19 @@ contains
     if (size(kpoints,2) /= size(kweights)) then
        STOP 'Error: size of kpoints do not match'
     end if
+    if (allocated(negf%kpoints)) then
+       call log_deallocate(negf%kpoints)
+    end if   
     call log_allocate(negf%kpoints,3,size(kweights))
     negf%kpoints = kpoints
+    if (allocated(negf%kweights)) then
+       call log_deallocate(negf%weights)
+    end if   
     call log_allocate(negf%kweights,size(kweights))
     negf%kweights = kweights
-
+    if (allocated(negf%local_k_index)) then
+       call log_deallocate(negf%local_k_index)
+    end if   
     call log_allocate(negf%local_k_index,size(local_kindex))
     negf%local_k_index = local_kindex
 
@@ -1576,7 +1584,7 @@ contains
 
        call log_deallocate(q_tmp)
     else
-       q = 0.d0
+       q = 0.0_dp
     endif
 
     call destroy_matrices(negf)
@@ -1650,8 +1658,8 @@ contains
     ! Dirty trick. Set the contact population to 1 on the final contact and
     ! 1 on the initial one.
     allocate(occupations(2))
-    occupations(negf%ni(1)) = 0.d0
-    occupations(negf%nf(1)) = 1.d0
+    occupations(negf%ni(1)) = 0.0_dp
+    occupations(negf%nf(1)) = 1.0_dp
 
     call meir_wingreen(negf, fixed_occupations=occupations)
     ! Assign the current matrix values to the transmission.
@@ -1770,7 +1778,7 @@ contains
 
       open(newunit=iu,file=trim(negf%out_path)//'tunneling_'//ofKP//'_'//idstr//'.dat')
 
-      !negf%eneconv=1.d0
+      !negf%eneconv=1.0_dp
 
       do i = 1,Nstep
 

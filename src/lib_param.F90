@@ -417,17 +417,17 @@ contains
      this%ReadOldDM_SGFs = 1   ! Compute Surface G.F. do not save
      this%ReadOldT_SGFs = 1    ! Compute Surface G.F. do not save
 
-     this%kwght = 1.d0
+     this%kwght = 1.0_dp
      this%ikpoint = 1
 
-     this%Ec = 0.d0
-     this%Ev = 0.d0
-     this%DeltaEc = 0.d0
-     this%DeltaEv = 0.d0
+     this%Ec = 0.0_dp
+     this%Ev = 0.0_dp
+     this%DeltaEc = 0.0_dp
+     this%DeltaEv = 0.0_dp
 
-     this%E = 0.d0            ! Holding variable
-     this%dos = 0.d0          ! Holding variable
-     this%eneconv = 1.d0      ! Energy conversion factor
+     this%E = 0.0_dp            ! Holding variable
+     this%dos = 0.0_dp          ! Holding variable
+     this%eneconv = 1.0_dp      ! Energy conversion factor
 
      this%isSid = .false.
      this%intHS = .true.
@@ -436,11 +436,11 @@ contains
      this%delta = 1.d-4      ! delta for G.F.
      this%dos_delta = 1.d-4  ! delta for DOS
      this%deltaModel = 1     ! deltaOmega model
-     this%wmax = 0.009d0     ! about 2000 cm^-1 cutoff
-     this%Emin = 0.d0        ! Tunneling or dos interval
-     this%Emax = 0.d0        !
-     this%Estep = 0.d0       ! Tunneling or dos E step
-     this%g_spin = 2.d0      ! spin degeneracy
+     this%wmax = 0.009_dp     ! about 2000 cm^-1 cutoff
+     this%Emin = 0.0_dp        ! Tunneling or dos interval
+     this%Emax = 0.0_dp        !
+     this%Estep = 0.0_dp       ! Tunneling or dos E step
+     this%g_spin = 2.0_dp      ! spin degeneracy
 
      this%Np_n = (/20, 20/)  ! Number of points for n
      this%Np_p = (/20, 20/)  ! Number of points for p
@@ -451,7 +451,7 @@ contains
      this%refcont = 1        ! call set_ref_cont()
      this%outer = 2          ! Compute full D.M. L,U extra
      this%dumpHS = .false.
-     this%int_acc = 1.d-3    ! Integration accuracy
+     this%int_acc = 0.001_dp    ! Integration accuracy
                              ! Only in adaptive refinement
      this%ndos_proj = 0
 

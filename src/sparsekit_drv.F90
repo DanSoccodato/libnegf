@@ -311,7 +311,7 @@ CONTAINS
         call error_msg('(rcsrdns_st)',MISMATCH)
     endif
 
-    dense%val(:,:)=0.d0
+    dense%val(:,:)=0.0_dp
 
     IF (sp%nnz.NE.0) THEN
 
@@ -823,7 +823,7 @@ CONTAINS
         call error_msg('(rcsrdns_st)',MISMATCH)
     endif
 
-    dense%val(:,:)=(0.d0, 0.d0)
+    dense%val(:,:)=(0.0_dp, 0.0_dp)
     ierr=0
     IF (sp%nnz.NE.0) THEN
 
@@ -867,7 +867,7 @@ CONTAINS
 
     else
 
-       dense%val(:,:)=(0.d0, 0.d0)
+       dense%val(:,:)=(0.0_dp, 0.0_dp)
 
     endif
 
@@ -1104,7 +1104,7 @@ CONTAINS
 
     call create(A,A_csr%nrow,A_csr%ncol,A_csr%nnz)
 
-    A%nzval=(0.d0,0.d0)
+    A%nzval=(0.0_dp,0.0_dp)
 
     call csr2coo(A_csr,A)
 
@@ -1717,7 +1717,7 @@ CONTAINS
     do j=1,A%ncol
        do i=1,A%nrow
           if (abs(A%val(i,j)).lt.drop) then
-             A%val(i,j)=(0.d0, 0.d0)
+             A%val(i,j)=(0.0_dp, 0.0_dp)
           else
              nnz=nnz+1
           endif
@@ -1941,7 +1941,7 @@ CONTAINS
 
     type(z_DNS) :: A_dns,B_dns,C_dns
     integer :: M,N,K
-    complex(dp), parameter :: s = (1.d0, 0.d0)
+    complex(dp), parameter :: s = (1.0_dp, 0.0_dp)
     complex(dp) :: beta
 
     IF (A_dns%ncol.NE.B_dns%nrow) THEN
@@ -1956,10 +1956,10 @@ CONTAINS
       IF(C_dns%nrow .ne. M .or. C_dns%ncol .ne. N) THEN
          call error_msg('(zmultdns) C',MISMATCH)
       ENDIF
-      beta = (1.d0,0.d0)
+      beta = (1.0_dp,0.0_dp)
     ELSE
       CALL create(C_dns,M,N)
-      beta = (0.d0,0.d0)
+      beta = (0.0_dp,0.0_dp)
     ENDIF
 
     CALL ZGEMM('N','N', M, N, K, s, A_dns%val, M, &
@@ -1986,7 +1986,7 @@ CONTAINS
     complex(dp), Dimension(:,:) :: A,B
     type(z_DNS) :: C_dns
     integer :: M,N,K
-    complex(dp), parameter :: s = (1.d0, 0.d0)
+    complex(dp), parameter :: s = (1.0_dp, 0.0_dp)
     complex(dp) :: beta
 
     IF (size(A,2).NE.size(B,MISMATCH)) THEN
@@ -2001,10 +2001,10 @@ CONTAINS
       IF(C_dns%nrow .ne. M .or. C_dns%ncol .ne. N) THEN
          call error_msg('(zmultdnss) C',MISMATCH)
       ENDIF
-      beta = (1.d0,0.d0)
+      beta = (1.0_dp,0.0_dp)
     ELSE
       CALL create(C_dns,M,N)
-      beta = (0.d0,0.d0)
+      beta = (0.0_dp,0.0_dp)
     ENDIF
 
     CALL ZGEMM('N','N', M, N, K, s, A, M, &
@@ -2048,10 +2048,10 @@ CONTAINS
       IF(C_dns%nrow .ne. M .or. C_dns%ncol .ne. N) THEN
        call error_msg('(zmatmuls) C',MISMATCH)
       ENDIF
-      beta = (1.d0,0.d0)
+      beta = (1.0_dp,0.0_dp)
     ELSE
       CALL create(C_dns,M,N)
-      beta = (0.d0,0.d0)
+      beta = (0.0_dp,0.0_dp)
     ENDIF
 
     CALL ZGEMM('N','N', M, N, K, s, A, M, &
@@ -2100,10 +2100,10 @@ CONTAINS
       IF(C_dns%nrow .ne. M .or. C_dns%ncol .ne. N) THEN
         call error_msg('(zmultdnss) C',MISMATCH)
       ENDIF
-      beta = (1.d0,0.d0)
+      beta = (1.0_dp,0.0_dp)
     ELSE
       CALL create(C_dns,M,N)
-      beta = (0.d0,0.d0)
+      beta = (0.0_dp,0.0_dp)
     ENDIF
 
     ! C = beta C + s A * B
@@ -2524,7 +2524,7 @@ CONTAINS
     ENDIF
 
     call create(A_dns,(i2-i1+1),(j2-j1+1))
-    A_dns%val=(0.d0,0.d0)
+    A_dns%val=(0.0_dp,0.0_dp)
 
     do i = i1, i2
        do k = A_csr%rowpnt(i), A_csr%rowpnt(i+1)-1
@@ -2861,7 +2861,7 @@ CONTAINS
 
     !Cambio segno a GreenA -> -GreenA
     do i=1,GreenA%nnz
-      GreenA%nzval(i)=(-1.d0, 0.d0)*GreenA%nzval(i)
+      GreenA%nzval(i)=(-1.0_dp, 0.0_dp)*GreenA%nzval(i)
     enddo
 
     !Esegue A=GreenR1-GreenA
@@ -2869,7 +2869,7 @@ CONTAINS
 
     !A=j(GreenR-GreenA)
     do i=1,A%nnz
-      A%nzval(i)=(0.d0, 1.d0)*(A%nzval(i))
+      A%nzval(i)=(0.0_dp, 1.0_dp)*(A%nzval(i))
     enddo
 
     call destroy(GreenA)
@@ -2894,7 +2894,7 @@ CONTAINS
 
     call create(A,GreenA%nrow,GreenA%ncol)
 
-    A%val=(0.d0,1.d0)*(GreenR1%val - GreenA%val)
+    A%val=(0.0_dp,1.0_dp)*(GreenR1%val - GreenA%val)
 
     call destroy(GreenA)
 
@@ -3152,7 +3152,7 @@ CONTAINS
 
     integer :: i
 
-    trace = (0.d0,0.d0)
+    trace = (0.0_dp,0.0_dp)
     if (present(mask)) then
        if (size(mask) /= mat%nrow) then
           stop 'Error in ztrace_csr: size(mask) /= nrow'
@@ -3323,7 +3323,7 @@ CONTAINS
     END DO
 
     IF ( index .EQ. 0 ) THEN
-       sprs_element = 0.d0
+       sprs_element = 0.0_dp
     ELSE
        sprs_element = M(index)
     END IF

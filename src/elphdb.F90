@@ -122,11 +122,11 @@ contains
     if (ierr.ne.0) stop 'ALLOCATION ERROR: could not allocate coupling'
     do ii = 1,natm
       call create(this%sigma_r(ii),orbsperatm(ii),orbsperatm(ii))
-      this%sigma_r(ii)%val = (0.0d0, 0.0d0)
+      this%sigma_r(ii)%val = (0.0_dp, 0.0_dp)
       call create(this%sigma_n(ii),orbsperatm(ii),orbsperatm(ii))
-      this%sigma_n(ii)%val = (0.0d0, 0.0d0)
+      this%sigma_n(ii)%val = (0.0_dp, 0.0_dp)
       call create(this%coupling(ii),orbsperatm(ii),orbsperatm(ii))
-      this%coupling(ii)%val = 0.d0
+      this%coupling(ii)%val = 0.0_dp
     end do
     this%nummodes = 1  !Single mode (Actually n localized modes, but we
                        !treat them all together)

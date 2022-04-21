@@ -176,9 +176,9 @@ contains
           ! Add green's function of the bound layer.....
           if (n0.gt.0) then
              call create(gt,ngs,ngs)
-             gt%val=(0.D0,0.D0)
+             gt%val=zero
              do i1=1,ngs
-                gt%val(i1,i1)=(1.D0,0.D0)
+                gt%val(i1,i1)=one
              enddo
              !Here we define the Green's function related to bound states.
              call inverse(gt%val(n1:n2,n1:n2),Go,npl)
@@ -225,8 +225,6 @@ contains
     complex(dp), DIMENSION(n,n), intent(inout) :: Ao,Bo,Co
     integer, intent(out) :: ncyc
 
-    complex(dp), parameter :: one = (1.d0,0.d0)  ! For LAPACK
-    complex(dp), parameter :: zero = (0.d0,0.d0) ! MATRIX MULT.
     complex(dp), ALLOCATABLE, DIMENSION(:,:) :: Ao_s, A1, B1, C1
     complex(dp), ALLOCATABLE, DIMENSION(:,:) :: GoXCo
     complex(dp), ALLOCATABLE, DIMENSION(:,:) :: GoXBo, Self
@@ -296,8 +294,8 @@ contains
     complex(dp), DIMENSION(n,n), intent(in) :: Ao_in,Bo_in,Co_in
     integer, intent(out) :: ncyc
 
-    complex(sp), parameter :: one = (1.d0,0.d0)  ! For LAPACK
-    complex(sp), parameter :: zero = (0.d0,0.d0) ! MATRIX MULT.
+    complex(sp), parameter :: one_sp = (1.0,0.0)  ! For LAPACK
+    complex(sp), parameter :: zero_sp = (0.0,0.0) ! MATRIX MULT.
     complex(sp), ALLOCATABLE, DIMENSION(:,:) :: Go, Ao, Bo, Co
     complex(sp), ALLOCATABLE, DIMENSION(:,:) :: Ao_s, A1, B1, C1
     complex(sp), ALLOCATABLE, DIMENSION(:,:) :: GoXCo
@@ -325,10 +323,10 @@ contains
       call inverse(Go,Ao,n)
 
       call log_allocate(GoXCo, n, n)
-      call CGEMM('N','N',n,n,n, one, Go, n, Co, n,  zero, GoXCo, n)
+      call CGEMM('N','N',n,n,n, one_sp, Go, n, Co, n,  zero_sp, GoXCo, n)
 
       call log_allocate(C1, n, n)
-      call CGEMM('N','N',n,n,n,  one, Co, n, GoXCo, n, zero, C1, n)
+      call CGEMM('N','N',n,n,n,  one_sp, Co, n, GoXCo, n, zero_sp, C1, n)
 
       if (maxval(abs(C1)).le.SGFACC) then
          if (okCo) then
@@ -343,21 +341,21 @@ contains
       endif
 
       call log_allocate(Self, n, n)
-      call CGEMM('N','N',n,n,n, one, Bo, n, GoXCo, n, zero, Self, n)
+      call CGEMM('N','N',n,n,n, one_sp, Bo, n, GoXCo, n, zero_sp, Self, n)
       call log_deallocate(GoXCo)
       Ao_s  = Ao_s - Self
       Ao    = Ao - Self
       call log_deallocate(Self)
 
       call log_allocate(GoXBo, n, n)
-      call CGEMM('N','N',n,n,n, one, Go, n, Bo, n,  zero, GoXBo, n)
+      call CGEMM('N','N',n,n,n, one_sp, Go, n, Bo, n,  zero_sp, GoXBo, n)
 
       call log_allocate(B1, n, n)
-      call CGEMM('N','N',n,n,n,  one, Bo, n, GoXBo, n, zero, B1, n)
+      call CGEMM('N','N',n,n,n,  one_sp, Bo, n, GoXBo, n, zero_sp, B1, n)
       Bo = B1
       call log_deallocate(B1)
 
-      call CGEMM('N','N',n,n,n, -one, Co, n, GoXBo, n, one, Ao, n)
+      call CGEMM('N','N',n,n,n, -one_sp, Co, n, GoXBo, n, one_sp, Ao, n)
 
       Co = C1
       call log_deallocate(C1)
@@ -456,9 +454,9 @@ contains
 
        avncyc = avncyc + ncyc*1.0_dp/ncont
 
-       call prealloc_sum(pnegf%cont(i)%HMC,pnegf%cont(i)%SMC,(-1.d0, 0.d0),Ec,Tlc(i))
+       call prealloc_sum(pnegf%cont(i)%HMC,pnegf%cont(i)%SMC,minusone,Ec,Tlc(i))
 
-       call prealloc_sum(pnegf%cont(i)%HMC,pnegf%cont(i)%SMC,(-1.d0, 0.d0),conjg(Ec),TpMt)
+       call prealloc_sum(pnegf%cont(i)%HMC,pnegf%cont(i)%SMC,minusone,conjg(Ec),TpMt)
 
        call zdagger(TpMt,Tcl(i))
 

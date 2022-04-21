@@ -35,8 +35,8 @@ contains
 
     implicit none
 
-    complex(kind=dp), PARAMETER :: alfa= (1.d0,0.d0)
-    complex(kind=dp), PARAMETER :: beta= (0.d0,0.d0)
+    complex(kind=dp), PARAMETER :: alfa= (1.0_dp,0.0_dp)
+    complex(kind=dp), PARAMETER :: beta= (0.0_dp,0.0_dp)
 
     integer :: dim
     complex(kind=dp), DIMENSION(dim,dim) :: S,Shalf
@@ -92,8 +92,8 @@ contains
 
     implicit none
 
-    real(kind=dp), PARAMETER :: alfa= 1.d0
-    real(kind=dp), PARAMETER :: beta= 0.d0
+    real(kind=dp), PARAMETER :: alfa= 1.0_dp
+    real(kind=dp), PARAMETER :: beta= 0.0_dp
 
     integer :: dim
     real(kind=dp), DIMENSION(dim,dim) :: S,Shalf
@@ -102,11 +102,11 @@ contains
     integer :: i
     real(dp) :: r
     
-    Shalf = 0.d0
+    Shalf = 0.0_dp
 
     do i=1,dim
-       S(i,i) = S(i,i) - 1.d0
-       Shalf(i,i) = 1.d0
+       S(i,i) = S(i,i) - 1.0_dp
+       Shalf(i,i) = 1.0_dp
     enddo
     
     if (OP.eq.'+') r = 0.5d0
@@ -123,8 +123,8 @@ contains
   subroutine lowdin_trans(OP,H,S,HL,dim)
 
     implicit none
-    complex(kind=dp), PARAMETER :: alfa= (1.d0,0.d0)
-    complex(kind=dp), PARAMETER :: beta= (0.d0,0.d0)
+    complex(kind=dp), PARAMETER :: alfa= (1.0_dp,0.0_dp)
+    complex(kind=dp), PARAMETER :: beta= (0.0_dp,0.0_dp)
 
     integer :: dim
     complex(kind=dp), DIMENSION(dim,dim) :: S,H,HL

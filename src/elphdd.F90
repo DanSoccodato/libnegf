@@ -86,8 +86,8 @@ contains
     this%struct = struct
     this%coupling = coupling * coupling
     this%scba_niter = niter
-    this%sigma_r = (0.0d0, 0.0d0)
-    this%sigma_n = (0.0d0, 0.0d0)
+    this%sigma_r = (0.0_dp, 0.0_dp)
+    this%sigma_n = (0.0_dp, 0.0_dp)
     this%nummodes = 1  !Single mode (Actually n localized modes, but we
                        !treat them all together)
     this%wq = 0.0_dp   ! Zero energy mode

@@ -349,7 +349,7 @@ subroutine zinit_CSR(mat)
   if(mat%nnz.ne.mat%nrow) STOP 'cannot initialize matrix (nnz != nrow)'
 
   do k=1,Mat%nrow
-     Mat%nzval(k)=0.d0
+     Mat%nzval(k)=0.0_dp
      Mat%colind(k)=k
      Mat%rowpnt(k)=k
   enddo
@@ -363,7 +363,7 @@ subroutine zcreate_id_CSR(mat,nrow)
 
   call zcreate_CSR(mat,nrow,nrow,nrow)
   do i=1,nrow
-     mat%nzval(i)=(1.d0, 0.d0)
+     mat%nzval(i)=(1.0_dp, 0.0_dp)
      mat%rowpnt(i)=i
      mat%colind(i)=i
   enddo
@@ -394,9 +394,9 @@ subroutine zclone_id_CSR(mat, matH)
   do i=1,nrow
     do j =mat%rowpnt(i), mat%rowpnt(i+1)-1
       if (mat%colind(j) .eq. i) then
-         mat%nzval(j)=(1.d0,0.d0)
+         mat%nzval(j)=(1.0_dp,0.0_dp)
       else
-         mat%nzval(j)=(0.d0,0.d0)
+         mat%nzval(j)=(0.0_dp,0.0_dp)
       end if
     enddo
   enddo
@@ -411,7 +411,7 @@ subroutine zcreate_id_DNS(mat,nrow,alpha)
 
   call zcreate_DNS(mat,nrow,nrow)
 
-  mat%val = (0.d0,0.d0)
+  mat%val = (0.0_dp,0.0_dp)
 
   if (present(alpha)) then
      do i=1,nrow
@@ -438,7 +438,7 @@ subroutine zrecreate_CSR(mat)
   call zcreate_CSR(mat,ncol,ncol,ncol)
 
    do k=1,ncol
-     mat%nzval(k)=0.d0
+     mat%nzval(k)=0.0_dp
      mat%colind(k)=k
      mat%rowpnt(k)=k
   enddo
@@ -1380,7 +1380,7 @@ subroutine rrecreate_CSR(mat)
   call rcreate_CSR(mat,ncol,ncol,ncol)
 
    do k=1,ncol
-     mat%nzval(k)=0.d0
+     mat%nzval(k)=0.0_dp
      mat%colind(k)=k
      mat%rowpnt(k)=k
   enddo
