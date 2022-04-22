@@ -350,7 +350,7 @@ contains
     class(TMatrixCacheMem) :: this
 
     type(TMatrixCacheEntry), pointer :: p, previous
-
+    print*,'mem_destroy',associated(this%first)
     if (.not. associated(this%first)) then
       return
     end if

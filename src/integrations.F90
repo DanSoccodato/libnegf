@@ -38,6 +38,8 @@ module integrations
  use clock
  use energy_mesh
  use interactions
+ use ln_elastic
+ use ln_inelastic
  use elphinel
 #:if defined("MPI")
   use libmpifx_module
@@ -764,7 +766,7 @@ contains
 
         if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-        if (allocated(negf%interactArray)) then
+        if (negf%interactList%counter /= 0) then
           call write_real_info(negf%verbose,30,'SCBA error', scba_error)
         end if
 
@@ -915,7 +917,7 @@ contains
 
        if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-       if (allocated(negf%interactArray)) then
+       if (negf%interactList%counter /= 0) then
          call write_real_info(negf%verbose,30,'SCBA error',scba_error)
        end if
 
@@ -1230,8 +1232,8 @@ contains
     integer :: i, ncont, Nsteps, np
     real(dp) :: wqmax
 
-    if (allocated(negf%interactArray)) then
-      wqmax = get_max_wq(negf%interactArray)      
+    if (negf%interactList%counter /= 0) then
+      wqmax = get_max_wq(negf%interactList)      
       print*,'max wq=',wqmax
       Nsteps=nint((negf%Emax-negf%Emin+wqmax)/negf%Estep) + 1
       print*,'Emin/Emax=',negf%Emin,negf%Emax,negf%Estep
@@ -1415,9 +1417,9 @@ contains
     type(Tnegf) :: negf
     real(dp), dimension(:), optional :: fixed_occupations
 
-    integer :: scba_iter, scba_niter, size_ni, ref_bk
+    integer :: scba_iter_ela, scba_iter_inela, scba_niter_inela, scba_niter_ela, size_ni, ref_bk
     integer :: iE, iK, jj, i1, j1, Nstep, outer, ncont, icont
-    real(dp) :: ncyc, scba_error
+    real(dp) :: ncyc, scba_elastic_error, scba_tolerance
     Type(z_DNS), dimension(MAXNCONT) :: SelfEneR, Tlc, Tcl, GS
     real(dp), dimension(:), allocatable :: curr_mat, frm
     complex(dp) :: Ec
@@ -1450,18 +1452,20 @@ contains
     ! SCBA Iteration
     ! ---------------------------------------------------------------------
     call interaction_prepare(negf)
-    call negf%scbaDriver%init(1.0e-7_dp, .true.)
-    scba_niter = get_max_niter(negf%interactArray)
-    call write_info(negf%verbose, 30, 'NUMBER OF SCBA ITERATIONS', scba_niter)
-    scba_iter = 0
+    scba_tolerance = 1.0e-7_dp
+    call negf%scbaDriver%init(tol = scba_tolerance, dowrite = .true.)
+    scba_niter_inela = get_max_niter_inelastic(negf%interactList)
+    scba_niter_ela = get_max_niter_elastic(negf%interactList)
+    call write_info(negf%verbose, 30, 'NUMBER OF SCBA INELASTIC ITERATIONS', scba_niter_inela)
+    scba_iter_inela = 0
 
-    scba: do while (.not.negf%scbaDriver%is_converged() .and. scba_iter <= scba_niter)
+    scba: do while (.not.negf%scbaDriver%is_converged() .and. scba_iter_inela <= scba_niter_inela)
 
       call write_info(negf%verbose, 30, '-----------------------------')
-      call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter)
+      call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter_inela)
       call write_info(negf%verbose, 30, '-----------------------------')
       
-      call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+      call negf%scbaDriver%set_scba_iter(scba_iter_inela, negf%interactList)
 
       ! Loop over local k-points
       kloop: do iK = 1, size(negf%local_k_index)
@@ -1496,9 +1500,12 @@ contains
           ! Compute block tri-diagonal Gr and Gn
           ! ---------------------------------------------------------------------
           negf%tDestroyGr = .false.; negf%tDestroyGn = .false.
-          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Gn ')
-          call calculate_Gn_neq_components(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm)
+          if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute elastic SCBA ')
+          call calculate_elastic_scba(negf,real(Ec),SelfEneR,Tlc,Tcl,GS,frm,scba_niter_ela, &
+                scba_tolerance, scba_elastic_error)
           if (id0.and.negf%verbose.gt.VBT) call write_clock
+
+          print*,'scba elastic error',scba_elastic_error
 
           negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Meir-Wingreen ')
@@ -1521,8 +1528,8 @@ contains
       ! ---------------------------------------------------------------------
       ! COMPUTE SELF-ENERGIES
       ! ---------------------------------------------------------------------
-      print*,'call compute_Sigmas  CPU#', id
-      call compute_Sigmas(negf)
+      print*,'call compute_Sigmas inelastic CPU#', id
+      call compute_Sigmas_inelastic(negf)
 
       !Check SCBA convergence on layer currents
       print*,'call check J convergence'
@@ -1533,7 +1540,7 @@ contains
       call negf%G_r%destroy()
       call negf%G_n%destroy()
       
-      scba_iter = scba_iter + 1
+      scba_iter_inela = scba_iter_inela + 1
 
     end do scba
 
@@ -1591,7 +1598,7 @@ contains
     ! ---------------------------------------------------------------------
     call interaction_prepare(negf)
     call negf%scbaDriver%init(1.0e-7_dp, .true.)
-    scba_niter = get_max_niter(negf%interactArray)
+    scba_niter = get_max_niter(negf%interactList)
     call write_info(negf%verbose, 30, 'NUMBER OF SCBA ITERATIONS', scba_niter)
     scba_iter = 0
 
@@ -1601,7 +1608,7 @@ contains
       call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter)
       call write_info(negf%verbose, 30, '-----------------------------')
       
-      call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+      call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactList)
 
       ! Loop over local k-points
       kloop: do iK = 1, size(negf%local_k_index)
@@ -1694,53 +1701,112 @@ contains
   subroutine interaction_prepare(negf)
     type(TNegf) :: negf
 
-    integer :: ii
     real(dp) :: deltaE
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
 
-    if (allocated(negf%interactArray)) then
-      do ii = 1, size(negf%interactArray)    
-        select type(pInter => negf%interactArray(ii)%inter)
-        type is(ElPhonInel)
-          deltaE = real(negf%en_grid(2)%Ec - negf%en_grid(1)%Ec)    
-          call ElPhonInel_setEnGrid(pInter, deltaE, size(negf%en_grid), negf%local_en_points)
-          call ElPhonInel_setkpoints(pInter, negf%kpoints, negf%kweights, negf%local_k_index)
-        end select
-      end do
-    end if
+    do while (associated(it)) 
+      select type(pInter => it%inter)
+      type is(ElPhonInel)
+        deltaE = real(negf%en_grid(2)%Ec - negf%en_grid(1)%Ec)    
+        call ElPhonInel_setEnGrid(pInter, deltaE, size(negf%en_grid), negf%local_en_points)
+        call ElPhonInel_setkpoints(pInter, negf%kpoints, negf%kweights, negf%local_k_index)
+      end select
+      it => it%next
+    end do
   
   end subroutine interaction_prepare
 
   !---------------------------------------------------------------------------
   subroutine interaction_cleanup(negf)
     type(TNegf) :: negf
-    integer :: ii
+ 
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
   
-    if (allocated(negf%interactArray)) then
-      do ii = 1, size(negf%interactArray)    
-        select type(pInter => negf%interactArray(ii)%inter)
-        type is(ElPhonInel)
-           call ElPhonInel_destroy(pInter)
-        end select
-      end do
-    end if
+    do while (associated(it)) 
+      select type(pInter => it%inter)
+      type is(ElPhonInel)
+         call ElPhonInel_destroy(pInter)
+      end select
+      it => it%next
+    end do
 
   end subroutine interaction_cleanup
   
   !---------------------------------------------------------------------------
-  subroutine compute_sigmas(negf)
+  subroutine compute_sigmas_inelastic(negf)
     type(TNegf) :: negf
 
-    integer :: ii
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
 
-    if (allocated(negf%interactArray)) then
-      associate(intArray => negf%interactArray)
-      do ii = 1, size(intArray)
-          call intArray(ii)%inter%compute_Sigma_r(spin=negf%spin)
-          call intArray(ii)%inter%compute_Sigma_n(spin=negf%spin)
-      end do
-      end associate
-    end if
-  end subroutine compute_sigmas
+    do while (associated(it))
+      select type(pInter => it%inter)
+      class is (TInelastic) 
+        call it%inter%compute_Sigma_r(spin=negf%spin)
+        call it%inter%compute_Sigma_n(spin=negf%spin)
+      end select  
+      it => it%next
+    end do
+  end subroutine compute_sigmas_inelastic
+
+  !---------------------------------------------------------------------------
+  subroutine compute_sigmas_elastic(negf)
+    type(TNegf) :: negf
+
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
+
+    do while (associated(it))
+      select type(pInter => it%inter)
+      class is (TElastic) 
+        call it%inter%compute_Sigma_r(spin=negf%spin)
+        call it%inter%compute_Sigma_n(spin=negf%spin)
+      end select  
+      it => it%next
+    end do
+  end subroutine compute_sigmas_elastic
+
+  !---------------------------------------------------------------------------
+  function get_max_niter_elastic(interactList) result (maxiter)
+    type(TInteractionList), intent(in) :: interactList  
+    integer :: maxiter
+
+    type(TInteractionNode), pointer :: it 
+    it => interactList%first
+
+    maxiter = 0
+    do while (associated(it)) 
+      select type(pInter => it%inter)
+      class is(TElastic)
+        if (pInter%scba_niter > maxiter) then  
+           maxiter = pInter%scba_niter
+        end if   
+      end select      
+      it => it%next
+    end do
+  end function get_max_niter_elastic
+
+  !---------------------------------------------------------------------------
+  function get_max_niter_inelastic(interactList) result (maxiter)
+    type(TInteractionList), intent(in) :: interactList  
+    integer :: maxiter
+
+    type(TInteractionNode), pointer :: it 
+    it => interactList%first
+
+    maxiter = 0
+    do while (associated(it)) 
+      select type(pInter => it%inter)
+      class is(TInelastic)
+        if (pInter%scba_niter > maxiter) then  
+           maxiter = pInter%scba_niter
+        end if   
+      end select      
+      it => it%next
+    end do
+  end function get_max_niter_inelastic
 
   !---------------------------------------------------------------------------
   !>
@@ -1760,7 +1826,7 @@ contains
     integer :: scba_iter, max_scba_iter, i1
     real(dp) :: ncyc
     Type(z_DNS), Dimension(MAXNCONT) :: SelfEneR, Tlc, Tcl, GS
-
+    type(TInteractionNode), pointer :: it
 
     negf%readOldSGF = negf%readOldDM_SGFs
 
@@ -1770,13 +1836,13 @@ contains
 
     scba_error = 0.0_dp
 
-    if (.not.allocated(negf%interactArray)) then
+    if (negf%interactList%counter == 0) then
       max_scba_iter = 0
     else
-      max_scba_iter = get_max_niter(negf%interactArray)
+      max_scba_iter = get_max_niter(negf%interactList)
       call negf%scbaDriver%init(1.0e-7_dp, .false.)
       do scba_iter = 1, max_scba_iter
-        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactList)
         call negf%scbaDriver%check_Mat_convergence(Gr)
         if (negf%scbaDriver%is_converged()) exit
         call destroy(Gr)
@@ -1822,14 +1888,14 @@ contains
     scba_error = 0.0_dp
     ! In case of interactions (only elastic supported now) we go into
     ! the Self Consistent Born Approximation loop.
-    if (.not.allocated(negf%interactArray)) then
+    if (negf%interactList%counter == 0) then
       max_scba_iter = 0
     else
-      max_scba_iter = get_max_niter(negf%interactArray)
+      max_scba_iter = get_max_niter(negf%interactList)
       call negf%scbaDriver%init(1.0e-7_dp, .false.)
 
       do scba_iter = 1, max_scba_iter
-        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactArray)
+        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactList)
         call negf%scbaDriver%check_Mat_convergence(Gn)
         if (negf%scbaDriver%is_converged()) exit
         call destroy(Gn)

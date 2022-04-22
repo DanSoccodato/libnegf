@@ -61,6 +61,7 @@ program hello
   params%Estep = 1.d-1
   params%mu = mu
   params%kbT_t = kt
+  params%verbose = 100
   call set_params(pnegf, params)
 
   ! Check values for 0 and finite coupling.
@@ -84,7 +85,7 @@ program hello
   write(*,*) 'Test 2 - current with coupling = 0.05'
   write(*,*) '------------------------------------------------------------------ '
   coupling = 0.05
-  call destroy_elph_model(pnegf)
+  call pnegf%destroy_interactions()
   call set_elph_dephasing(pnegf, coupling, 5)
   call compute_current(pnegf)
   current = pnegf%currents(1)

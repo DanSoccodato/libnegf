@@ -58,15 +58,17 @@ module scba
 
 
   !> Sets the scba_iteration in all interactions
-  subroutine set_scba_iter(this, iter, interactArray)
+  subroutine set_scba_iter(this, iter, interactList)
     class(TScbaDriver) :: this
     integer, intent(in) :: iter
-    type(TInteractionArray) :: interactArray(:)
+    type(TInteractionList) :: interactList
 
-    integer :: ii
+    type(TInteractionNode), pointer :: it 
+    it => interactList%first
     this%scba_iter = iter
-    do ii = 1, size(interactArray)
-      call interactArray(ii)%inter%set_scba_iter(iter)
+    do while (associated(it))
+      call it%inter%set_scba_iter(iter)
+      it => it%next
     end do
   end subroutine set_scba_iter
 

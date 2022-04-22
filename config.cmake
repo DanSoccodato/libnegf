@@ -39,26 +39,26 @@ set(INSTALL_MOD_DIR "${INSTALL_INCLUDE_DIR}/modfiles" CACHE PATH
 #######################################################################################
 # Fortran and C compilers, manual setting example
 #######################################################################################
-set(MYINCLUDE "$ENV{HOME}/include/gnu-11.1.0" CACHE STRING "include folder compiled with gnu-11.1")
-set(CMAKE_Fortran_COMPILER "mpif90" CACHE STRING "General Fortran compiler")
-set(CMAKE_Fortran_FLAGS "-fc=gfortran-11.1 -fmax-errors=5 -I${MYINCLUDE}" CACHE STRING "General Fortran flags")
-set(CMAKE_C_COMPILER "mpicc" CACHE STRING "General C compiler")
-set(CMAKE_C_FLAGS "-cc=gcc-11.1 -fmax-errors=5 -I${MYINCLUDE}" CACHE STRING "General C flags")
+#set(MYINCLUDE "$ENV{HOME}/include/gnu-11.1.0" CACHE STRING "include folder compiled with gnu-11.1")
+#set(CMAKE_Fortran_COMPILER "mpif90" CACHE STRING "General Fortran compiler")
+#set(CMAKE_Fortran_FLAGS "-fc=gfortran-11.1 -fmax-errors=5 -I${MYINCLUDE}" CACHE STRING "General Fortran flags")
+#set(CMAKE_C_COMPILER "mpicc" CACHE STRING "General C compiler")
+#set(CMAKE_C_FLAGS "-cc=gcc-11.1 -fmax-errors=5 -I${MYINCLUDE}" CACHE STRING "General C flags")
 #######################################################################################
 # Lapack library, manual setting example
 #######################################################################################
-set(MKL_LIBDIR "/usr/pack/intel_mkl-11.1-ma/mkl/lib/intel64" CACHE STRING
-	"Directory where to look for mkl libraries"	)
+#set(MKL_LIBDIR "/usr/pack/intel_mkl-11.1-ma/mkl/lib/intel64" CACHE STRING
+#	"Directory where to look for mkl libraries"	)
 
-set(BLAS_LIBRARY_DIR "${MKL_LIBDIR};/usr/lib/x86_64-linux-gnu"
-	CACHE STRING "Paths to scan when looking for the LAPACK libraries")
+#set(BLAS_LIBRARY_DIR "${MKL_LIBDIR};/usr/lib/x86_64-linux-gnu"
+#	CACHE STRING "Paths to scan when looking for the LAPACK libraries")
 
-set(BLAS_LIBRARY "mkl_gnu_thread;mkl_core;-lgomp" CACHE STRING "BLAS libraries")
+#set(BLAS_LIBRARY "mkl_gnu_thread;mkl_core;-lgomp" CACHE STRING "BLAS libraries")
 
-set(LAPACK_LIBRARY_DIR "${MKL_LIBDIR}"
-	CACHE STRING "Paths to scan when looking for the LAPACK libraries")
+#set(LAPACK_LIBRARY_DIR "${MKL_LIBDIR}"
+#	CACHE STRING "Paths to scan when looking for the LAPACK libraries")
 
-set(LAPACK_LIBRARY "mkl_intel_lp64" CACHE STRING "LAPACK libraries")
+#set(LAPACK_LIBRARY "mkl_intel_lp64" CACHE STRING "LAPACK libraries")
 
 
 

@@ -28,7 +28,7 @@ module iterative
   use sparsekit_drv
   use inversions
   use ln_structure, only : TStruct_Info
-  use lib_param, only : MAXNCONT, Tnegf, intarray, TInteractionArray
+  use lib_param, only : MAXNCONT, Tnegf, intarray, TInteractionList
   use mpi_globals, only : id, numprocs, id0
   use outmatrix, only : outmat_c, inmat_c, direct_out_c, direct_in_c
   use clock
@@ -45,7 +45,7 @@ module iterative
 
   public :: calculate_Gr
   public :: calculate_Gn_neq_components
-
+  public :: calculate_elastic_scba
   public :: calculate_gsmr_blocks
   public :: calculate_gsml_blocks
   public :: calculate_Gr_tridiag_blocks
@@ -283,6 +283,54 @@ CONTAINS
 
   end subroutine calculate_Gn_neq_components
 
+  
+  !---------------------------------------------------------------------
+  !---------------------------------------------------------------------
+  !---------------------------------------------------------------------
+  subroutine calculate_elastic_scba(negf,E,SelfEneR,Tlc,Tcl,gsurfR,frm,scba_niter, &
+            &  scba_tol, scba_error)
+    type(Tnegf), intent(inout) :: negf
+    type(z_DNS), dimension(:), intent(in)  :: SelfEneR, gsurfR, Tlc, Tcl
+    real(dp), intent(in)  :: E
+    real(dp), dimension(:), intent(in)  :: frm
+    integer, intent(in) :: scba_niter
+    real(dp), intent(in) :: scba_tol
+    real(dp), intent(inout) :: scba_error
+
+    Type(z_CSR) :: Gn, Gn_previous
+    integer :: scba_iter, outer = 0
+
+    do scba_iter = 0, scba_niter
+    print*,scba_iter
+       negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
+       call destroy_all_blk(negf)
+       if (scba_iter > 0 ) then
+          print*,'clean G_r/G_n'
+          call negf%G_r%destroy()
+          call negf%G_n%destroy()
+       end if    
+       negf%tDestroyGr = .false.; negf%tDestroyGn = .false.
+
+    print*,'compute Gn'
+       call calculate_Gn_neq_components(negf,E,SelfEneR,Tlc,Tcl,gsurfR,frm,Gn,outer)
+       
+       if (scba_iter > 0) then
+          scba_error = maxval(abs(Gn%nzval - Gn_previous%nzval))
+          if (scba_error < scba_tol) then
+             call destroy(Gn)
+             exit
+          end if
+          call destroy(Gn_previous)
+       end if
+       call clone(Gn,Gn_previous)
+       call destroy(Gn)
+    enddo
+
+    call destroy(Gn_previous)
+
+  end subroutine calculate_elastic_scba
+
+
   !---------------------------------------------------------------------
   !>
   !  Iterative algorithm implementing Meir Wingreen formula for a given
@@ -385,13 +433,14 @@ CONTAINS
   subroutine add_sigma_r(negf, ESH)
     class(TNegf) :: negf
     type(z_DNS) :: ESH(:,:)
-
-    integer :: kk
-    if (allocated(negf%interactArray)) then
-      do kk = 1, size(negf%interactArray)
-        call negf%interactArray(kk)%inter%add_sigma_r(ESH, negf%iE, negf%iKpoint, negf%spin)
-      end do
-    end if
+    
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
+    do while (associated(it))
+      call it%inter%add_sigma_r(ESH, negf%iE, negf%iKpoint, negf%spin)
+      it => it%next
+    end do
+  
   end subroutine add_sigma_r
 
   !--------------------------------------------------------------------------
@@ -399,13 +448,14 @@ CONTAINS
   subroutine add_sigma_n(negf, sigma_n)
     class(TNegf) :: negf
     type(z_DNS) :: sigma_n(:,:)
-
-    integer :: kk
-    if (allocated(negf%interactArray)) then
-      do kk = 1, size(negf%interactArray)
-        call negf%interactArray(kk)%inter%add_sigma_n(sigma_n, negf%iE, negf%iKpoint, negf%spin)
-      end do
-    end if
+    
+    type(TInteractionNode), pointer :: it
+    it => negf%interactList%first
+    
+    do while (associated(it))
+      call it%inter%add_sigma_n(sigma_n, negf%iE, negf%iKpoint, negf%spin)
+      it => it%next
+    end do
   end subroutine add_sigma_n
 
 
@@ -511,29 +561,28 @@ CONTAINS
     type(TNegf) :: negf
     type(z_DNS), intent(in) :: Gr(:,:)
 
-    integer :: kk, iE, iK, iSpin
+    integer :: iE, iK, iSpin
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
     iE=negf%iE
     iK=negf%iKpoint
     iSpin=negf%spin
-
-    if (allocated(negf%interactArray)) then
-      associate(interactArray=>negf%interactArray)
-      do kk = 1, size(interactArray)
-        if (interactArray(kk)%inter%wq == 0.0_dp) then
-          ! elastic case 
-          call interactArray(kk)%inter%set_Gr(Gr, iE, iK, iSpin)
-        else
-          ! inelastic case 
-          ! cache Gr in negf container and pass the pointer
-          call cache_Gr(negf, Gr, iE, iK, iSpin)
-          select type(pInter => interactArray(kk)%inter)
-          class is (TInelastic)
-             call pInter%set_Gr_pointer(negf%G_r)
-          end select
-        end if
-      end do
-      end associate
-    end if
+    
+    do while (associated(it))
+      if (it%inter%wq == 0.0_dp) then
+        ! elastic case 
+        call it%inter%set_Gr(Gr, iE, iK, iSpin)
+      else  
+        ! inelastic case 
+        ! cache Gr in negf container and pass the pointer
+        call cache_Gr(negf, Gr, iE, iK, iSpin)
+        select type(pInter => it%inter)
+        class is (TInelastic)
+           call pInter%set_Gr_pointer(negf%G_r)
+        end select
+      end if
+      it => it%next
+    end do
 
   end subroutine set_Gr
 
@@ -543,28 +592,28 @@ CONTAINS
     type(TNegf) :: negf
     type(z_DNS), intent(in) :: Gn(:,:)
 
-    integer :: kk, iE, iK, iSpin
+    integer :: iE, iK, iSpin
+    type(TInteractionNode), pointer :: it 
+    it => negf%interactList%first
     iE=negf%iE
     iK=negf%iKpoint
     iSpin=negf%spin
-
-    if (allocated(negf%interactArray)) then
-      associate(interactArray=>negf%interactArray)
-      do kk = 1, size(interactArray)
-        ! Set Gr to elastic interactions
-        if (interactArray(kk)%inter%wq == 0.0_dp) then
-          call interactArray(kk)%inter%set_Gn(Gn, iE, iK, iSpin)
-        else
-          ! cache Gn and pass the pointer
-          call cache_Gn(negf, Gn, iE, iK, iSpin)
-          select type(pInter => interactArray(kk)%inter)
-          class is (TInelastic)
-             call pInter%set_Gn_pointer(negf%G_n)
-          end select
-        end if
-      end do
-      end associate
-    end if
+    
+    do while (associated(it))
+      if (it%inter%wq == 0.0_dp) then
+        ! elastic case 
+        call it%inter%set_Gn(Gn, iE, iK, iSpin)
+      else  
+        ! inelastic case 
+        ! cache Gn in negf container and pass the pointer
+        call cache_Gn(negf, Gn, iE, iK, iSpin)
+        select type(pInter => it%inter)
+        class is (TInelastic)
+           call pInter%set_Gn_pointer(negf%G_n)
+        end select
+      end if
+      it => it%next
+    end do
 
   end subroutine set_Gn
 

@@ -32,7 +32,7 @@ module interactions
   private
 
   public :: TInteraction
-  public :: TInteractionArray
+  public :: TInteractionList, TInteractionNode
   public :: get_max_wq
   public :: get_max_niter
 
@@ -66,10 +66,20 @@ module interactions
   end type TInteraction
 
   !-----------------------------------------------------------------------------
-  ! derived type to create array of pointers to objects
-  type TInteractionArray
+  ! derived type to create list of interaction objects
+  type TInteractionList
+    integer :: counter = 0   
+    type(TInteractionNode), pointer :: first => null()
+    type(TInteractionNode), pointer :: curr => null()
+    contains
+    procedure :: add => add
+    procedure :: destroy => destroy
+  end type TInteractionList
+        
+  type TInteractionNode
     class(TInteraction), allocatable :: inter
-  end type TInteractionArray
+    type(TInteractionNode), pointer :: next => null()
+  end type TInteractionNode      
 
   abstract interface
 
@@ -182,28 +192,71 @@ module interactions
     this%scba_iter = scba_iter
   end subroutine set_scba_iter
 
-  function get_max_wq(interactArray) result(maxwq)
-    type(TInteractionArray), intent(in) :: interactArray(:)
+        
+  function get_max_wq(list) result(maxwq)
+    type(TInteractionList), intent(in) :: list
     real(dp) :: maxwq
-    integer :: ii
-
+    
+    type(TInteractionNode), pointer :: it
+    it => list%first
     maxwq = 0.0_dp
-    do ii = 1, size(interactArray)
-      if (interactArray(ii)%inter%wq > maxwq) then
-         maxwq = interactArray(ii)%inter%wq
+    do while (associated(it))
+      if (it%inter%wq > maxwq) then
+         maxwq = it%inter%wq
       end if
+      it => it%next
     end do
   end function get_max_wq
 
-  function get_max_niter(interactArray) result (max_niter)
-    type(TInteractionArray), intent(in) :: interactArray(:)
-    integer :: max_niter, ii
+  function get_max_niter(list) result (max_niter)
+    type(TInteractionList), intent(in) :: list
+    integer :: max_niter
+    type(TInteractionNode), pointer :: it
     max_niter = 0
-    do ii = 1, size(interactArray)
-      if (interactArray(ii)%inter%scba_niter > max_niter) then
-         max_niter = interactArray(ii)%inter%scba_niter
+    it => list%first
+    do while (associated(it))
+      if (it%inter%scba_niter > max_niter) then
+         max_niter = it%inter%scba_niter
       end if
+      it => it%next
     end do
   end function get_max_niter
+
+  ! Interaction list methods
+  subroutine add(this, node)
+    class(TInteractionList) :: this
+    type(TInteractionNode), pointer, intent(out) :: node
+
+    allocate(node)
+    if (.not.associated(this%first)) then
+       this%first => node
+       this%curr => node
+       this%counter = 1
+    else    
+       this%curr%next => node
+       this%curr => node    
+       this%counter = this%counter + 1
+    end if
+  end subroutine add
+
+  subroutine destroy(this)
+    class(TInteractionList) :: this
+    
+    type(TInteractionNode), pointer :: it
+
+    if (.not.associated(this%first)) then
+       return
+    else   
+       this%curr => this%first
+       do while (associated(this%curr))   
+          it => this%curr
+          this%curr => this%curr%next
+          if (allocated(it%inter)) deallocate(it%inter)
+          deallocate(it)
+       end do
+    end if
+    this%first=>null()
+    this%curr=>null()
+  end subroutine destroy
 
 end module interactions

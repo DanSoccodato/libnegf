@@ -226,6 +226,9 @@ contains
   subroutine init_negf(negf)
     type(Tnegf) :: negf
 
+    real(dp) :: kpoints(3,1), kweights(1)
+    integer :: local_kindex(1)
+
     call negf%set_defaults()
     negf%form%formatted = .true.
     negf%isSid = .false.
@@ -235,6 +238,12 @@ contains
     ! Allocate zero contacts by default. The actual number of contacts
     ! can be set calling init_contacts again.
     call init_contacts(negf, 0)
+
+    ! Initialize a default gamma point
+    kpoints(:,1) = (/0.0_dp, 0.0_dp, 0.0_dp /)
+    kweights(1) = 1.0_dp
+    local_kindex(1) = 1
+    call set_kpoints(negf, kpoints, kweights, local_kindex)
 
   end subroutine init_negf
 
@@ -602,6 +611,7 @@ contains
 
   end subroutine set_kpoints
 
+  
   !!-------------------------------------------------------------------
   !! Get/Set parameters container
   !!-------------------------------------------------------------------
@@ -1606,7 +1616,7 @@ contains
   subroutine compute_current(negf)
     type(Tnegf) :: negf
 
-    if ( allocated(negf%interactArray) .or. negf%tDephasingBP) then
+    if ( negf%interactList%counter > 0 .or. negf%tDephasingBP) then
        call compute_meir_wingreen(negf);
        !call compute_layer_current(negf);
     else

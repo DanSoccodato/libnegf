@@ -29,7 +29,7 @@ module lib_param
   use elph, only : Telph
   use phph
   use energy_mesh, only : mesh
-  use interactions, only : TInteraction, TInteractionArray
+  use interactions, only : TInteraction, TInteractionList
   use elphdd, only : ElPhonDephD, ElPhonDephD_create, ElPhonDephD_init
   use elphdb, only : ElPhonDephB, ElPhonDephB_create, ElPhonDephB_init
   use elphds, only : ElPhonDephS, ElPhonDephS_create, ElPhonDephS_init
@@ -42,7 +42,7 @@ module lib_param
   implicit none
   private
 
-  public :: Tnegf, intArray, TEnGrid, TInteractionArray
+  public :: Tnegf, intArray, TEnGrid, TInteractionList
 
   public :: set_bp_dephasing
   public :: set_elph_dephasing
@@ -215,7 +215,7 @@ module lib_param
     type(Tphph) :: phph           ! phonon-phonon data
 
     ! Many Body Interactions as array of pointers
-    type(TInteractionArray), dimension(:), allocatable :: interactArray
+    type(TInteractionList)  :: interactList
     type(TScbaDriver) :: scbaDriver
 
     !! Output variables: these arrays are filled by internal subroutines to store
@@ -251,9 +251,7 @@ module lib_param
 
     procedure :: set_defaults => set_defaults
     procedure :: print_all_vars => print_all_vars
-    procedure :: create_interactions => create_interactions
     procedure :: destroy_interactions => destroy_interactions
-    procedure :: get_empty_slot => get_empty_slot
 
   end type Tnegf
 
@@ -271,7 +269,6 @@ contains
 
   end subroutine set_bp_dephasing
 
-
   !> Set values for the local electron phonon dephasing model
   !! (elastic scattering only)
   subroutine set_elph_dephasing(negf, coupling, niter)
@@ -279,17 +276,11 @@ contains
     real(dp),  dimension(:), allocatable, intent(in) :: coupling
     integer, intent(in) :: niter
 
-    integer :: ii
-
-    if (.not.allocated(negf%interactArray)) then
-       stop 'ERROR: interactArray not allocated'
-    end if   
-    ii = negf%get_empty_slot()
-    if (ii > size(negf%interactArray)) then
-       stop 'ERROR: empty slot not found'
-    end if
-    call elphondephd_create(negf%interactArray(ii)%inter)
-    select type(pInter => negf%interactArray(ii)%inter)
+    type(TInteractionNode), pointer :: node
+    
+    call negf%interactList%add(node)
+    call elphondephd_create(node%inter)
+    select type(pInter => node%inter)
     type is(ElPhonDephD)
       call elphondephd_init(pInter, negf%str, coupling, niter)
     class default
@@ -305,13 +296,11 @@ contains
     integer,  dimension(:), allocatable, intent(in) :: orbsperatom
     integer, intent(in) :: niter
 
-    integer :: ii
-    ii = negf%get_empty_slot()
-    if (ii > size(negf%interactArray)) then
-       stop 'ERROR: empty slot not found'
-    end if
-    call elphondephb_create(negf%interactArray(ii)%inter)
-    select type(pInter => negf%interactArray(ii)%inter)
+    type(TInteractionNode), pointer :: node
+    
+    call negf%interactList%add(node)
+    call elphondephd_create(node%inter)
+    select type(pInter => node%inter)
     type is(ElPhonDephB)
       call elphondephb_init(pInter, negf%str, coupling, orbsperatom, niter)
     class default
@@ -327,13 +316,10 @@ contains
     integer,  dimension(:), allocatable, intent(in) :: orbsperatom
     integer, intent(in) :: niter
 
-    integer :: ii
-    ii = negf%get_empty_slot()
-    if (ii > size(negf%interactArray)) then
-       stop 'ERROR: empty slot not found'
-    end if
-    call elphondephs_create(negf%interactArray(ii)%inter)
-    select type(pInter => negf%interactArray(ii)%inter)
+    type(TInteractionNode), pointer :: node
+    call negf%interactList%add(node)
+    call elphondephd_create(node%inter)
+    select type(pInter => node%inter)
     type is(ElPhonDephS)
       call elphondephs_init(pInter, negf%str, coupling, orbsperatom, negf%S, niter)
     class default
@@ -353,14 +339,10 @@ contains
     real(dp), intent(in) :: area
     integer, intent(in) :: niter
 
-    integer :: ii
-    ii = negf%get_empty_slot()
-    if (ii > size(negf%interactArray)) then
-       stop 'ERROR: empty slot not found'
-    end if
-
-    call elphonInel_create(negf%interactArray(ii)%inter)
-    select type(pInter => negf%interactArray(ii)%inter)
+    type(TInteractionNode), pointer :: node
+    call negf%interactList%add(node)
+    call elphondephd_create(node%inter)
+    select type(pInter => node%inter)
     type is(ElPhonInel)
       call elphoninel_init(pInter, negf%cartComm%id, negf%str, negf%basis, coupling, &
           &  wq, Temp, dz, eps0, eps_inf, q0, area, niter)
@@ -370,43 +352,13 @@ contains
 
   end subroutine set_elph_inelastic
 
-  !> create the array of interactions
-  subroutine create_interactions(this, nInteractions)
-    class(Tnegf) :: this
-    integer, intent(in) :: nInteractions
-
-    allocate(this%interactArray(nInteractions))
-
-  end subroutine create_interactions
-
   !> clean interactions objects
   subroutine destroy_interactions(this)
     class(Tnegf) :: this
 
-    integer :: ii
-
-    if (allocated(this%interactArray)) then
-      do ii = 1, size(this%interactArray)
-        if (allocated(this%interactArray(ii)%inter)) then
-          deallocate(this%interactArray(ii)%inter)
-        end if
-      end do
-      deallocate(this%interactArray)
-    end if
+    call this%interactList%destroy()
 
   end subroutine destroy_interactions
-
-  !> get the first empty slot in the interaction array
-  function get_empty_slot(this) result(ii)
-    class(TNegf) :: this
-    integer :: ii
-
-    do ii = 1, size(this%interactArray)
-      if (.not.allocated(this%interactArray(ii)%inter)) exit
-    end do
-
-  end function get_empty_slot
-
 
 
   subroutine set_defaults(this)
