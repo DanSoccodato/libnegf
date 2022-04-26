@@ -1,12 +1,15 @@
 module scba
   use ln_precision, only : dp
   use interactions
+  use ln_elastic, only : TElastic
+  use ln_inelastic, only : TInelastic
   use mat_def, only : z_CSR, z_DNS, create, destroy
   use sparsekit_drv, only : trace, clone
 
   type TScbaDriver
     !> Keep track of SCBA iteration
-    integer :: scba_iter = 0
+    integer :: scba_iter_inel = 0
+    integer :: scba_iter_el = 0
 
     !> SCBA Tolerance (Exact meaning may depend on model)
     real(dp) :: scba_tol = 1.0d-7
@@ -29,7 +32,8 @@ module scba
     contains
     procedure :: init => scba_init
     procedure :: destroy => scba_destroy
-    procedure :: set_scba_iter
+    procedure :: set_scba_iter_inel
+    procedure :: set_scba_iter_el
     procedure :: is_converged
     procedure :: check_Mat_convergence
     procedure :: check_J_convergence
@@ -58,20 +62,41 @@ module scba
 
 
   !> Sets the scba_iteration in all interactions
-  subroutine set_scba_iter(this, iter, interactList)
+  subroutine set_scba_iter_inel(this, iter, interactList)
     class(TScbaDriver) :: this
     integer, intent(in) :: iter
     type(TInteractionList) :: interactList
 
     type(TInteractionNode), pointer :: it 
     it => interactList%first
-    this%scba_iter = iter
+    this%scba_iter_inel = iter
     do while (associated(it))
-      call it%inter%set_scba_iter(iter)
+      select type(pInter => it%inter)
+      class is (TInelastic) 
+              call it%inter%set_scba_iter_inel(iter)
+      end select
       it => it%next
     end do
-  end subroutine set_scba_iter
+  end subroutine set_scba_iter_inel
 
+
+  subroutine set_scba_iter_el(this, iter, interactList)
+    class(TScbaDriver) :: this
+    integer, intent(in) :: iter
+    type(TInteractionList) :: interactList
+
+    type(TInteractionNode), pointer :: it 
+    it => interactList%first
+    this%scba_iter_el = iter
+
+    do while (associated(it))
+      select type(pInter => it%inter)
+      class is (TElastic) 
+              call it%inter%set_scba_iter_el(iter)
+      end select
+      it => it%next
+    end do
+  end subroutine set_scba_iter_el
 
   !> Check convergence on Gn matrix blocks
   subroutine check_Mat_convergence(this, Mat)
@@ -93,12 +118,12 @@ module scba
     if (maxerr < this%scba_tol) then
       this%converged = .true.
       if (this%do_write) then
-         write(*,*) "SCBA loop converged in",this%scba_iter,&
+         write(*,*) "SCBA loop converged in",this%scba_iter_inel,&
                   & " iterations with error", maxerr
       end if
     else
       if (this%do_write) then
-         write(*,*) "SCBA iteration",this%scba_iter," error", maxerr
+         write(*,*) "SCBA iteration",this%scba_iter_inel," error", maxerr
       end if
     end if
     call destroy(this%Mat_old)
@@ -121,12 +146,12 @@ module scba
     if (error < this%scba_tol) then
       this%converged = .true.
       if (this%do_write) then
-         write(*,*) "SCBA loop converged in",this%scba_iter,&
+         write(*,*) "SCBA loop converged in",this%scba_iter_inel,&
                   & " iterations with error", maxerr
       end if
     else
       if (this%do_write) then
-         write(*,*) "SCBA iteration",this%scba_iter," error", maxerr
+         write(*,*) "SCBA iteration",this%scba_iter_inel," error", maxerr
       end if
     end if
     this%J_old = J

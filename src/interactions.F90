@@ -43,7 +43,8 @@ module interactions
     !! corresponds to no iterations (self energy is not calculated)
     integer :: scba_niter = 0
     !> SCBA iteration (set from outside)
-    integer :: scba_iter = 0
+    integer :: scba_iter_inel = 0
+    integer :: scba_iter_el = 0
     !> Energy of the mode (what about wq(k) ??)
     real(dp) :: wq = 0.0_dp
 
@@ -52,7 +53,8 @@ module interactions
 
   contains
 
-    procedure, non_overridable :: set_scba_iter
+    procedure, non_overridable :: set_scba_iter_inel
+    procedure, non_overridable :: set_scba_iter_el
     procedure(abst_add_sigma_r), deferred :: add_sigma_r
     procedure(abst_add_sigma_n), deferred :: add_sigma_n
     procedure(abst_get_sigma_n_blk), deferred, private :: get_sigma_n_blk
@@ -186,12 +188,17 @@ module interactions
 
   contains
 
-  subroutine set_scba_iter(this, scba_iter)
+  subroutine set_scba_iter_inel(this, scba_iter)
     class(TInteraction) :: this
     integer, intent(in) :: scba_iter
-    this%scba_iter = scba_iter
-  end subroutine set_scba_iter
+    this%scba_iter_inel = scba_iter
+  end subroutine set_scba_iter_inel
 
+  subroutine set_scba_iter_el(this, scba_iter)
+    class(TInteraction) :: this
+    integer, intent(in) :: scba_iter
+    this%scba_iter_el = scba_iter
+  end subroutine set_scba_iter_el
         
   function get_max_wq(list) result(maxwq)
     type(TInteractionList), intent(in) :: list

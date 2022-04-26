@@ -287,7 +287,7 @@ contains
     !print*,'inel%add_sigma_r'
     npl = this%struct%num_PLs
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_inel .eq. 0) return
 
     label%kpoint = k_index
     label%energy_point = en_index
@@ -327,7 +327,7 @@ contains
     !print*,'inel%add_sigma_n'
     npl = this%struct%num_PLs
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_inel .eq. 0) return
 
     label%kpoint = k_index
     label%energy_point = en_index
@@ -365,7 +365,7 @@ contains
     type(TMatLabel) :: label
     integer :: ii, jj
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_inel .eq. 0) return
 
     label%kpoint = 0
     label%energy_point = 0
@@ -403,7 +403,7 @@ contains
 
     type(TMatLabel) :: label
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_inel .eq. 0) return
 
     label%row_block = ii
     label%col_block = jj

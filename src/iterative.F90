@@ -302,8 +302,8 @@ CONTAINS
 
     do scba_iter = 0, scba_niter
 
-    print*,''
-    print*,'scba_iter=', scba_iter
+      call negf%scbaDriver%set_scba_iter_el(scba_iter, negf%interactList)
+
        negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
        call destroy_all_blk(negf)
        negf%tDestroyGr = .false.; negf%tDestroyGn = .false.

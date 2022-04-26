@@ -1465,7 +1465,7 @@ contains
       call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter_inela)
       call write_info(negf%verbose, 30, '-----------------------------')
       
-      call negf%scbaDriver%set_scba_iter(scba_iter_inela, negf%interactList)
+      call negf%scbaDriver%set_scba_iter_inel(scba_iter_inela, negf%interactList)
 
       ! Loop over local k-points
       kloop: do iK = 1, size(negf%local_k_index)
@@ -1608,7 +1608,7 @@ contains
       call write_info(negf%verbose, 30, 'SCBA ITERATION', scba_iter)
       call write_info(negf%verbose, 30, '-----------------------------')
       
-      call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactList)
+      call negf%scbaDriver%set_scba_iter_inel(scba_iter, negf%interactList)
 
       ! Loop over local k-points
       kloop: do iK = 1, size(negf%local_k_index)
@@ -1842,7 +1842,7 @@ contains
       max_scba_iter = get_max_niter(negf%interactList)
       call negf%scbaDriver%init(1.0e-7_dp, .false.)
       do scba_iter = 1, max_scba_iter
-        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactList)
+        call negf%scbaDriver%set_scba_iter_inel(scba_iter, negf%interactList)
         call negf%scbaDriver%check_Mat_convergence(Gr)
         if (negf%scbaDriver%is_converged()) exit
         call destroy(Gr)
@@ -1895,7 +1895,7 @@ contains
       call negf%scbaDriver%init(1.0e-7_dp, .false.)
 
       do scba_iter = 1, max_scba_iter
-        call negf%scbaDriver%set_scba_iter(scba_iter, negf%interactList)
+        call negf%scbaDriver%set_scba_iter_inel(scba_iter, negf%interactList)
         call negf%scbaDriver%check_Mat_convergence(Gn)
         if (negf%scbaDriver%is_converged()) exit
         call destroy(Gn)

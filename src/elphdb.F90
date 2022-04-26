@@ -173,7 +173,7 @@ contains
 
     integer :: n, ii, indend, indstart, natm, norbs
 
-    if (this%scba_iter == 0) return
+    if (this%scba_iter_el == 0) return
 
     natm = size(this%orbsperatm)
 
@@ -200,7 +200,7 @@ contains
 
     integer :: n, ii, indend, indstart, natm, norbs
 
-    if (this%scba_iter == 0) return
+    if (this%scba_iter_el == 0) return
 
     natm = size(this%orbsperatm)
 
@@ -228,7 +228,7 @@ contains
 
     integer :: n, nbl, ii, nrow, indend, indstart, natm, norbs
 
-    if (this%scba_iter == 0) return
+    if (this%scba_iter_el == 0) return
 
     nbl = this%struct%num_PLs
     natm = size(this%orbsperatm)
@@ -272,7 +272,7 @@ contains
     integer :: n, npl, ii, indstart, indend, natm, norbs
 
     ! do not update if the maximum iterations have been reached
-    if (this%scba_iter > this%scba_niter) return
+    if (this%scba_iter_el > this%scba_niter) return
     ! This model does not keep track of Gr at different energies because
     ! the model is local in energy. We directly calculate sigma_r
     npl = this%struct%num_PLs
@@ -302,7 +302,7 @@ contains
     integer :: n, npl, ii, indstart, indend, natm, norbs
 
     ! do not update if the maximum iterations have been reached
-    if (this%scba_iter > this%scba_niter) return
+    if (this%scba_iter_el > this%scba_niter) return
     ! This model does not keep track of Gr at different energies because
     ! the model is local in energy. We directly calculate sigma_n
     npl = this%struct%num_PLs

@@ -171,7 +171,7 @@ contains
     type(z_dns), dimension(:,:), allocatable :: tmp_blk
     integer :: n, npl, ii, ierr, jj
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
     npl = this%struct%num_PLs
     if (npl .ne. 1) then
       write(*,*) 'ElphPhonDephB works only with single PL'
@@ -212,7 +212,7 @@ contains
     type(z_dns), dimension(:,:), allocatable :: tmp_blk
     integer :: n, npl, ii, ierr, jj
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
     npl = this%struct%num_PLs
     if (npl .ne. 1) then
       write(*,*) 'ElphPhonDephB works only with single PL'
@@ -252,7 +252,7 @@ contains
     type(z_dns), dimension(:,:), allocatable :: tmp_blk
     integer :: n, npl, ii, nrow, ierr, jj
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
     npl = this%struct%num_PLs
     if (npl .ne. 1) then
       write(*,*) 'ElphPhonDephB works only with single PL now'

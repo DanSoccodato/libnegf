@@ -106,7 +106,7 @@ contains
 
     integer :: n, nbl, ii, pl_start, pl_end
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
     nbl = this%struct%num_PLs
     do n=1,nbl
       pl_start=this%struct%mat_PL_start(n)
@@ -131,7 +131,7 @@ contains
 
     integer :: n, nbl, ii, pl_start, pl_end
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
 
     nbl = this%struct%num_PLs
     do n=1,nbl
@@ -158,7 +158,7 @@ contains
     integer :: n, nbl, ii, nrow, pl_start, pl_end
     nbl = this%struct%num_PLs
 
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
 
     do n = 1, nbl
       pl_start=this%struct%mat_PL_start(n)
@@ -187,7 +187,7 @@ contains
     integer :: n, nbl, nrow, pl_start, pl_end
     
     nbl = this%struct%num_PLs
-    if (this%scba_iter .eq. 0) return
+    if (this%scba_iter_el .eq. 0) return
     if (ii .ne. jj .or. ii.gt.nbl) return
 
     pl_start=this%struct%mat_PL_start(ii)
@@ -214,7 +214,7 @@ contains
     integer :: n, npl, ii, pl_start, pl_end
 
     ! Do not update if maximum iterations have been reached
-    if (this%scba_iter > this%scba_niter) return
+    if (this%scba_iter_el > this%scba_niter) return
     ! This model does not keep track of Gr at different energies because
     ! the model is local in energy. We directly calculate sigma_r
     npl = this%struct%num_PLs
@@ -240,7 +240,7 @@ contains
     integer :: n, npl, ii, pl_start, pl_end
 
     ! Do not update if maximum iterations have been reached
-    if (this%scba_iter > this%scba_niter) return
+    if (this%scba_iter_el > this%scba_niter) return
     ! This model does not keep track of Gr at different energies because
     ! the model is local in energy. We directly calculate sigma_r
     npl = this%struct%num_PLs
