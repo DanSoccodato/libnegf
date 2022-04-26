@@ -301,17 +301,13 @@ CONTAINS
     integer :: scba_iter, outer = 0
 
     do scba_iter = 0, scba_niter
-    print*,scba_iter
+
+    print*,''
+    print*,'scba_iter=', scba_iter
        negf%tDestroyGr = .true.; negf%tDestroyGn = .true.
        call destroy_all_blk(negf)
-       if (scba_iter > 0 ) then
-          print*,'clean G_r/G_n'
-          call negf%G_r%destroy()
-          call negf%G_n%destroy()
-       end if    
        negf%tDestroyGr = .false.; negf%tDestroyGn = .false.
 
-    print*,'compute Gn'
        call calculate_Gn_neq_components(negf,E,SelfEneR,Tlc,Tcl,gsurfR,frm,Gn,outer)
        
        if (scba_iter > 0) then
@@ -324,6 +320,10 @@ CONTAINS
        end if
        call clone(Gn,Gn_previous)
        call destroy(Gn)
+
+       call negf%G_r%destroy()
+       call negf%G_n%destroy()
+
     enddo
 
     call destroy(Gn_previous)
@@ -436,6 +436,7 @@ CONTAINS
     
     type(TInteractionNode), pointer :: it 
     it => negf%interactList%first
+
     do while (associated(it))
       call it%inter%add_sigma_r(ESH, negf%iE, negf%iKpoint, negf%spin)
       it => it%next

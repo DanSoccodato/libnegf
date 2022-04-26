@@ -267,6 +267,10 @@ contains
     end if
     negf%bp_deph%coupling = coupling
 
+    ! Initialize the cache space
+    call initialize_cache_space(negf,'G_r')
+    call initialize_cache_space(negf,'G_n')
+
   end subroutine set_bp_dephasing
 
   !> Set values for the local electron phonon dephasing model
@@ -286,6 +290,11 @@ contains
     class default
       stop 'ERROR: error of type downcast to ElPhonDephD'
     end select
+
+    ! Initialize the cache space
+    call initialize_cache_space(negf,'G_r')
+    call initialize_cache_space(negf,'G_n')
+
   end subroutine set_elph_dephasing
 
   !> Set values for the semi-local electron phonon dephasing model
@@ -306,6 +315,11 @@ contains
     class default
       stop 'ERROR: error of type downcast to ElPhonDephB'
     end select
+
+    ! Initialize the cache space
+    call initialize_cache_space(negf,'G_r')
+    call initialize_cache_space(negf,'G_n')
+
   end subroutine set_elph_block_dephasing
 
   !> Set values for the semi-local electron phonon dephasing model
@@ -325,6 +339,11 @@ contains
     class default
       stop 'ERROR: error of type downcast to ElPhonDephS'
     end select
+
+    ! Initialize the cache space
+    call initialize_cache_space(negf,'G_r')
+    call initialize_cache_space(negf,'G_n')
+
   end subroutine set_elph_s_dephasing
 
   subroutine set_elph_inelastic(negf, coupling, wq, Temp, dz, eps0, eps_inf, q0, area, niter)
@@ -350,6 +369,10 @@ contains
       stop 'ERROR: error of type downcast to ElPhonInel'
     end select
 
+    ! Initialize the cache space
+    call initialize_cache_space(negf,'G_r')
+    call initialize_cache_space(negf,'G_n')
+    
   end subroutine set_elph_inelastic
 
   !> clean interactions objects
@@ -360,6 +383,31 @@ contains
 
   end subroutine destroy_interactions
 
+  subroutine initialize_cache_space(negf, matrix)
+    type(Tnegf), intent(inout) :: negf 
+    character(3), intent(in) :: matrix
+
+    if (matrix == 'G_r') then
+      if (.not.associated(negf%G_r)) then
+         allocate(TMatrixCacheMem::negf%G_r)
+         select type(p => negf%G_r)
+         type is(TMatrixCacheMem)
+            p%tagname='G_r'
+         end select
+      end if
+    end if
+
+    if (matrix == 'G_n') then
+      if (.not.associated(negf%G_n)) then
+         allocate(TMatrixCacheMem::negf%G_n)
+         select type(p => negf%G_n)
+         type is(TMatrixCacheMem)
+            p%tagname='G_n'
+         end select
+      end if
+    end if
+
+  end subroutine initialize_cache_space
 
   subroutine set_defaults(this)
     class(Tnegf) :: this
