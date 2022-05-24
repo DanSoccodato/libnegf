@@ -39,6 +39,14 @@ if(WITH_INELASTIC)
   list(APPEND sources-fpp transform.F90)
 endif()
 
+if(WITH_TRANSPORT_GPU)
+  list(APPEND sources-fpp cudautils.F90)
+  list(APPEND sources-fpp iterative_gpu.F90)
+  list(APPEND sources-fpp cublas_interface.F90)
+else()
+  list(APPEND sources-fpp iterative_cpu.F90)
+endif()
+
 set(sources-f90
   api/libnegfAPICommon.f90
   api/libnegf_api.f90)
@@ -50,6 +58,10 @@ string(TIMESTAMP compdate "%Y-%m-%d")
 set(fyppdefs -D_GITREVISION=\"${gitrevision}\" -D_COMPDATE=\"${compdate}\")
 if(WITH_MPI)
   list(APPEND fyppdefs -DMPI)
+endif()
+
+if(WITH_TRANSPORT_GPU)
+  list(APPEND fyppdefs -DGPU)
 endif()
 
 set(sources-fpp-f90)

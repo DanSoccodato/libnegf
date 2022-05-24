@@ -1292,7 +1292,7 @@ contains
        if (.not.do_LEDOS) then
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling ')
 
-          call calculate_transmissions(negf%H,negf%S,Ec,SelfEneR,negf%ni,negf%nf, &
+          call calculate_transmissions(negf,negf%H,negf%S,Ec,SelfEneR,negf%ni,negf%nf, &
                              & negf%str, negf%tun_proj, TUN_MAT)
 
           negf%tunn_mat(i,:) = TUN_MAT(:) * negf%kwght
@@ -1300,7 +1300,7 @@ contains
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling and DOS')
           LEDOS(:) = 0.d0
 
-          call calculate_transmissions_and_dos(negf%H,negf%S,Ec,SelfEneR,GS,negf%ni,negf%nf, &
+          call calculate_transmissions_and_dos(negf,negf%H,negf%S,Ec,SelfEneR,GS,negf%ni,negf%nf, &
                              & negf%str, negf%tun_proj, TUN_MAT, negf%dos_proj, LEDOS)
 
           negf%tunn_mat(i,:) = TUN_MAT(:) * negf%kwght
@@ -1811,7 +1811,7 @@ contains
        if (.not.do_LEDOS) then
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling ')
 
-          call calculate_transmissions(negf%H,negf%S,Ec,SelfEneR,negf%ni,negf%nf, &
+          call calculate_transmissions(negf,negf%H,negf%S,Ec,SelfEneR,negf%ni,negf%nf, &
                              & negf%str, negf%tun_proj, TUN_MAT)
 
           negf%tunn_mat(i,:) = TUN_MAT(:) * negf%kwght
@@ -1819,7 +1819,7 @@ contains
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Tunneling and DOS')
           LEDOS(:) = 0.d0
 
-          call calculate_transmissions_and_dos(negf%H,negf%S,Ec,SelfEneR,GS,negf%ni,negf%nf, &
+          call calculate_transmissions_and_dos(negf,negf%H,negf%S,Ec,SelfEneR,GS,negf%ni,negf%nf, &
                              & negf%str, negf%tun_proj, TUN_MAT, negf%dos_proj, LEDOS)
 
           negf%tunn_mat(i,:) = TUN_MAT(:) * negf%kwght

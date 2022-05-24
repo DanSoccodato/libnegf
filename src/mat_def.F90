@@ -27,7 +27,7 @@ Module mat_def
 
 public :: z_CSR,z_CSC,z_MSR,z_COO,z_EXT_COO,z_DNS
 public :: r_CSR,r_CSC,r_MSR,r_COO,r_DNS, z_vec, z_RGM
-public :: c_DNS, s_CSR ! single precision defs
+public :: c_DNS, s_CSR, c_CSR! single precision defs
 public :: r_DNS3, z_DNS3, c_DNS3 ! three indeces matrix (used for storage)
 
 public :: create, initialize, recreate, destroy, create_id
@@ -241,6 +241,17 @@ Type s_CSR
   integer, DIMENSION(:), ALLOCATABLE :: colind
   integer, DIMENSION(:), ALLOCATABLE :: rowpnt
 end Type s_CSR
+
+Type c_CSR
+  integer :: nnz = 0
+  integer :: nrow = 0
+  integer :: ncol = 0
+  logical :: sorted = .false.
+  complex(kind=sp), DIMENSION(:), ALLOCATABLE :: nzval
+  integer, DIMENSION(:), ALLOCATABLE :: colind
+  integer, DIMENSION(:), ALLOCATABLE :: rowpnt
+end Type c_CSR
+
 
 !CSC Complex Structure definition (Compressed Sparse Column format)
 

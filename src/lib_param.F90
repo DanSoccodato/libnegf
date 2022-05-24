@@ -37,6 +37,10 @@ module lib_param
 #:if defined("MPI")
   use libmpifx_module, only : mpifx_comm
 #:endif
+#:if defined("GPU")
+  use cublas_v2
+  use cusolverDn
+#:endif
   implicit none
   private
 
@@ -113,6 +117,10 @@ module lib_param
     type(mpifx_comm) :: cartComm
     type(mpifx_comm) :: energyComm
     type(mpifx_comm) :: kComm
+#:endif
+#:if defined("GPU")
+   type(cublasHandle) :: hcublas
+   type(cusolverDnHandle) :: hcusolver
 #:endif
     integer  :: ReadoldDM_SGFs    ! 0: Read 1: compute 2: comp & save
     integer  :: ReadoldT_SGFs     ! 0: Read 1: compute 2: comp & save

@@ -40,6 +40,10 @@ module libnegf
 #:if defined("MPI")
  use libmpifx_module, only : mpifx_comm
 #:endif
+#:if defined("GPU")
+ use cublas_v2
+ use cusolverDn
+#:endif
  use clock
  implicit none
  private
@@ -116,6 +120,7 @@ module libnegf
  public :: printcsrij   ! debugging routines
  public :: getel   ! debugging routines
 
+ integer :: istat
  integer, parameter :: VBT=70
  integer, parameter :: MAXNUMPLs = 10000
  integer, parameter, public :: READ_SGF = 0
@@ -227,7 +232,10 @@ contains
     negf%isSid = .false.
     negf%form%type = "PETSc"
     negf%form%fmt = "F"
-
+#:if defined("GPU")
+    istat = cublasCreate(negf%hcublas)
+    istat = cusolverDnCreate(negf%hcusolver)
+#:endif
     ! Allocate zero contacts by default. The actual number of contacts
     ! can be set calling init_contacts again.
     call init_contacts(negf, 0)
@@ -1134,6 +1142,10 @@ contains
     call destroy_matrices(negf)
     call destroy_surface_green_cache(negf)
     call WriteMemInfo(6)
+ #:if defined("GPU")
+    istat = cublasDestroy(negf%hcublas)
+    istat = cusolverDnDestroy(negf%hcusolver)
+ #:endif
 
   end subroutine destroy_negf
 

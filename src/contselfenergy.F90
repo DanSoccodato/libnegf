@@ -39,6 +39,13 @@ module ContSelfEnergy
 #:if defined("MPI")
  use libmpifx_module, only : mpifx_reduceip
 #:endif
+#:if defined("GPU")
+ use cublas_interface
+ use iso_c_binding
+ use openacc
+ use cublas_v2
+ use cusolverDn
+#:endif
  implicit none
  private
 
@@ -65,6 +72,12 @@ module ContSelfEnergy
      module procedure compute_contacts_dns
   end interface
 
+#:if defined("GPU")
+  interface decimation_gpu
+     module procedure decimation_gpu_sp        
+     module procedure decimation_gpu_dp        
+  end interface 
+#:endif
 contains
   !--------------------------------------------------------------------
   ! SURFACE GREEN's FUNCTION USING THE DECIMATION ITERATION
@@ -161,9 +174,11 @@ contains
           Bo=E*SC%val(n1:n2,n3:n4)-HC%val(n1:n2,n3:n4)
           Co=conjg(E)*SC%val(n1:n2,n3:n4)-HC%val(n1:n2,n3:n4)
           Co=conjg(transpose(Co))
-
+#:if defined("GPU")
+          call decimation_gpu(pnegf,Go,Ao,Bo,Co,npl,.false.,ncyc)
+#:else
           call decimation(Go,Ao,Bo,Co,npl,ncyc)
-
+#:endif
           call log_deallocate(Ao)
           call log_deallocate(Bo)
           call log_deallocate(Co)
@@ -288,6 +303,274 @@ contains
     call log_deallocate(Ao_s)
 
   end subroutine decimation
+
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+#:if defined("GPU")
+  subroutine decimation_gpu_sp(negf,Go_out,Ao_in,Bo_in,Co_in,n,tf32,ncyc)
+    implicit none
+    type(Tnegf), intent(in) :: negf
+    integer, intent(in) :: n
+    complex(sp), DIMENSION(n,n), intent(out) :: Go_out
+    complex(sp), DIMENSION(n,n), intent(in) :: Ao_in, Bo_in, Co_in
+    logical, intent(in) :: tf32
+    integer, intent(out) :: ncyc
+
+    complex(sp), parameter :: one = (1.0_sp,0.0_sp)  ! For LAPACK
+    complex(sp), parameter :: zero = (0.0_sp,0.0_sp) ! MATRIX MULT.
+    complex(sp), ALLOCATABLE, DIMENSION(:,:) :: Ao,Bo,Co,Go
+    complex(sp), ALLOCATABLE, DIMENSION(:,:) :: Ao_s, C1, TT, Self
+    complex(sp), ALLOCATABLE, DIMENSION(:) :: work
+    integer, ALLOCATABLE, DIMENSION(:) :: pivot
+    real(sp) :: summ
+    integer :: i1, istat, ii, jj, lwork, err, indx
+    type(cublasHandle) :: hh
+    type(cusolverDnHandle) :: hhsol
+    logical :: okCo = .false.
+
+    allocate(Ao(n, n))
+    allocate(Bo(n, n))
+    allocate(Co(n, n))
+    allocate(Go(n,n))
+    allocate(Ao_s(n, n))
+    allocate(C1(n, n))
+    allocate(Self(n, n))
+    allocate(TT(n,n))
+    allocate(pivot(n))
+
+    Ao = Ao_in
+    Bo = Bo_in
+    Co = Co_in
+
+    hh = negf%hcublas
+    hhsol = negf%hcusolver
+
+    istat = cublasSetPointerMode(hh, CUBLAS_POINTER_MODE_HOST)
+    !if (tf32) then
+    !  !istat = cublasSetMathMode(hh, CUBLAS_TF32_TENSOR_OP_MATH)
+    !  istat = cublasSetMathMode(hh, CUBLAS_TENSOR_OP_MATH)
+    !end if
+
+    !$acc data create(Self(n,n))
+    istat=cusolverDnCgetrf_buffersize(hhsol,n,n,Self,n,lwork)   
+    !$acc end data
+    allocate(work(lwork))
+
+    !$acc data copyin(Ao(n,n),Bo(n,n),Co(n,n)) copyout(Go(n,n)) &
+    !$acc&     create(Ao_s(n,n),C1(n,n),pivot(n), &
+    !$acc&     TT(n,n),Self(n,n),work(lwork),err)
+
+    !$acc host_data use_device(Ao_s, Ao, Go, TT, Self, C1, pivot, work, err)
+
+    istat = cublasCcopy(hh, n*n, Ao, 1, Ao_s, 1)
+
+    do i1 = 1, 300
+      ncyc=i1
+
+      !$acc kernels
+      Go = (0.0_sp, 0.0_sp)
+      do jj = 1, n
+        Go(jj,jj) = (1.0_sp, 0.0_sp)
+      end do
+      !$acc end kernels
+
+      istat=cublasCcopy(hh, n*n, Ao, 1, Self, 1)
+      istat=cusolverDnCgetrf(hhsol,n,n,Self,n,work,pivot,err)                
+      istat=cusolverDnCgetrs(hhsol,CUBLAS_OP_N,n,n,Self,n,pivot,Go,n,err)    
+
+      istat=cublasCgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &                   
+             & one, Go, n, Co, n, zero, TT, n)
+
+      istat=cublasCgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &                   
+              & one, Co, n, TT, n, zero, C1, n)
+
+      istat=cublasScasum(hh, n*n, C1, 1, summ)                                                                   
+
+      ! check convergence       
+      if (summ.le.real(SGFACC,sp)*n*n) then
+         if (okCo) then
+            exit;
+         else
+            okCo = .true.
+         endif
+      else
+         okCo = .false.
+      endif
+      
+      istat=cublasCgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &                   
+              & one, Bo, n, TT, n, zero, Self, n)
+
+      istat=cublasCaxpy(hh, n*n, -one, Self, 1, Ao_s, 1)                           
+      istat=cublasCaxpy(hh, n*n, -one, Self, 1, Ao, 1)
+
+      istat=cublasCgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &
+              & one, Go, n, Bo, n, zero, TT, n)
+
+      istat=cublasCgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &
+              & -one, Co, n, TT, n, one, Ao, n)
+
+      istat = cublasCcopy(hh, n*n, C1, 1, Co, 1)
+
+      istat=cublasCgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &
+              & one, Bo, n, TT, n, zero, C1, n)
+
+      istat = cublasCcopy(hh, n*n, C1, 1, Bo, 1)
+
+    end do
+
+    !$acc kernels
+    Go = (0.0_sp, 0.0_sp)
+    do jj = 1, n
+      Go(jj,jj) = (1.0_sp, 0.0_sp)
+    end do
+    !$acc end kernels
+    istat=cublasCcopy(hh, n*n, Ao_s, 1, Self, 1)
+    istat=cusolverDnCgetrf(hhsol,n,n,Self,n,work,pivot,err)
+    istat=cusolverDnCgetrs(hhsol,CUBLAS_OP_N,n,n,Self,n,pivot,Go,n,err)
+
+    !$acc end host_data
+    !$acc end data
+
+    Go_out = Go
+
+    deallocate(Ao,Bo,Co,Go)
+    deallocate(Ao_s,C1,TT,Self)
+    deallocate(pivot)
+
+  end subroutine decimation_gpu_sp
+!-------------------------------------------------------------------------------
+  subroutine decimation_gpu_dp(negf,Go_out,Ao_in,Bo_in,Co_in,n,tf32,ncyc)
+    implicit none
+    type(Tnegf), intent(in) :: negf
+    integer, intent(in) :: n
+    complex(dp), DIMENSION(n,n), intent(out) :: Go_out
+    complex(dp), DIMENSION(n,n), intent(in) :: Ao_in, Bo_in, Co_in
+    logical, intent(in) :: tf32
+    integer, intent(out) :: ncyc
+
+    complex(dp), parameter :: one = (1.0_dp,0.0_dp)  ! For LAPACK
+    complex(dp), parameter :: zero = (0.0_dp,0.0_dp) ! MATRIX MULT.
+    complex(dp), ALLOCATABLE, DIMENSION(:,:) :: Ao,Bo,Co,Go
+    complex(dp), ALLOCATABLE, DIMENSION(:,:) :: Ao_s, C1, TT, Self
+    complex(dp), ALLOCATABLE, DIMENSION(:) :: work
+    integer, ALLOCATABLE, DIMENSION(:) :: pivot
+    real(dp) :: summ
+    integer :: i1, istat, ii, jj, lwork, err, indx
+    type(cublasHandle) :: hh
+    type(cusolverDnHandle) :: hhsol
+    logical :: okCo = .false.
+
+    allocate(Ao(n, n))
+    allocate(Bo(n, n))
+    allocate(Co(n, n))
+    allocate(Go(n,n))
+    allocate(Ao_s(n, n))
+    allocate(C1(n, n))
+    allocate(Self(n, n))
+    allocate(TT(n,n))
+    allocate(pivot(n))
+
+    Ao = Ao_in
+    Bo = Bo_in
+    Co = Co_in
+
+    hh = negf%hcublas
+    hhsol = negf%hcusolver
+
+    istat = cublasSetPointerMode(hh, CUBLAS_POINTER_MODE_HOST)
+    !if (tf32) then
+    !  !istat = cublasSetMathMode(hh, CUBLAS_TF32_TENSOR_OP_MATH)
+    !  istat = cublasSetMathMode(hh, CUBLAS_TENSOR_OP_MATH)
+    !end if
+
+    !$acc data create(Self(n,n))
+    istat=cusolverDnZgetrf_buffersize(hhsol,n,n,Self,n,lwork)   
+    !$acc end data
+    allocate(work(lwork))
+
+    !$acc data copyin(Ao(n,n),Bo(n,n),Co(n,n)) copyout(Go(n,n)) &
+    !$acc&     create(Ao_s(n,n),C1(n,n),pivot(n), &
+    !$acc&     TT(n,n),Self(n,n),work(lwork),err)
+
+    !$acc host_data use_device(Ao_s, Ao, Go, TT, Self, C1, pivot, work, err)
+
+    istat = cublasZcopy(hh, n*n, Ao, 1, Ao_s, 1)
+
+    do i1 = 1, 300
+      ncyc=i1
+
+      !$acc kernels
+      Go = (0.0_dp, 0.0_dp)
+      do jj = 1, n
+        Go(jj,jj) = (1.0_dp, 0.0_dp)
+      end do
+      !$acc end kernels
+
+      istat=cublasZcopy(hh, n*n, Ao, 1, Self, 1)
+      istat=cusolverDnZgetrf(hhsol,n,n,Self,n,work,pivot,err)                
+      istat=cusolverDnZgetrs(hhsol,CUBLAS_OP_N,n,n,Self,n,pivot,Go,n,err)    
+
+      istat=cublasZgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &                   
+             & one, Go, n, Co, n, zero, TT, n)
+
+      istat=cublasZgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &                   
+              & one, Co, n, TT, n, zero, C1, n)
+
+      istat=cublasDzasum(hh, n*n, C1, 1, summ)                                                                   
+
+      ! check convergence       
+      if (summ.le.real(SGFACC,dp)*n*n) then
+         if (okCo) then
+            exit;
+         else
+            okCo = .true.
+         endif
+      else
+         okCo = .false.
+      endif
+      
+      istat=cublasZgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &                   
+              & one, Bo, n, TT, n, zero, Self, n)
+
+      istat=cublasZaxpy(hh, n*n, -one, Self, 1, Ao_s, 1)                           
+      istat=cublasZaxpy(hh, n*n, -one, Self, 1, Ao, 1)
+
+      istat=cublasZgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &
+              & one, Go, n, Bo, n, zero, TT, n)
+
+      istat=cublasZgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &
+              & -one, Co, n, TT, n, one, Ao, n)
+
+      istat = cublasZcopy(hh, n*n, C1, 1, Co, 1)
+
+      istat=cublasZgemm(hh, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &
+              & one, Bo, n, TT, n, zero, C1, n)
+
+      istat = cublasZcopy(hh, n*n, C1, 1, Bo, 1)
+
+    end do
+
+    !$acc kernels
+    Go = (0.0_dp, 0.0_dp)
+    do jj = 1, n
+      Go(jj,jj) = (1.0_dp, 0.0_dp)
+    end do
+    !$acc end kernels
+    istat=cublasZcopy(hh, n*n, Ao_s, 1, Self, 1)
+    istat=cusolverDnZgetrf(hhsol,n,n,Self,n,work,pivot,err)
+    istat=cusolverDnZgetrs(hhsol,CUBLAS_OP_N,n,n,Self,n,pivot,Go,n,err)
+
+    !$acc end host_data
+    !$acc end data
+
+    Go_out = Go
+
+    deallocate(Ao,Bo,Co,Go)
+    deallocate(Ao_s,C1,TT,Self)
+    deallocate(pivot)
+
+  end subroutine decimation_gpu_dp
+#:endif
 
 !-------------------------------------------------------------------------------
 
