@@ -131,7 +131,7 @@ CONTAINS
 #:if defined("GPU")
     call copy_trid_toHOST(Gr) 
 #:endif
-
+    
     call destroy_tridiag_blk(ESH)
     call deallocate_blk_dns(ESH)
 
@@ -239,7 +239,7 @@ CONTAINS
 #:if defined("GPU")
       call copy_trid_toHOST(Gr) 
 #:endif
-
+    
     !Passing Gr to interaction that builds Sigma_r
     if (allocated(negf%inter)) then
       call negf%inter%set_Gr(Gr, negf%iE)
@@ -247,18 +247,18 @@ CONTAINS
     !Computing device G_n
     call allocate_blk_dns(Gn,nbl)
     call init_tridiag_blk(Gn,ESH)
-    
+
 #:if defined("GPU")
       call copy_vdns_toGPU(SelfEneR) 
 #:endif
     call calculate_Gn_tridiag_blocks(negf,ESH,SelfEneR,frm,ref,negf%str,gsmr,Gr,Gn)
 
-    call destroy_gsm(gsmr) 
-    call deallocate_gsm(gsmr)
-
 #:if defined("GPU")
       call copy_trid_toHOST(Gn) 
 #:endif
+
+    call destroy_gsm(gsmr) 
+    call deallocate_gsm(gsmr)
 
     !Passing G^n to interaction that builds Sigma^n
     if (allocated(negf%inter)) then
@@ -282,10 +282,17 @@ CONTAINS
     end if
 
     call destroy_all_blk(negf)
+    !call destroy_blk(Gn)
+    !deallocate(Gn)
+    !call destroy_blk(Gr)
+    !deallocate(Gr)
 
 #:if defined("GPU")
     call delete_vdns_fromGPU(SelfEneR)
 #:endif
+    
+    !call destroy_tridiag_blk(ESH)
+    !deallocate(ESH)
 
   end subroutine calculate_Gn_neq_components
 
@@ -573,7 +580,26 @@ CONTAINS
   !---------------------------------------------------------------------
   subroutine destroy_all_blk(negf)
     type(Tnegf), intent(in) :: negf
+    integer :: i
 
+#:if defined("GPU")
+    if (negf%tDestroyESH) then
+      call destroy_tridiag_blk(ESH)
+      if (allocated(ESH)) deallocate(ESH)
+    end if  
+    if (negf%tDestroyGr) then
+      call destroy_blk(Gr)
+      if (allocated(Gr)) deallocate(Gr)
+    else
+      call delete_trid_fromGPU(Gr)
+    end if   
+    if (negf%tDestroyGn) then
+      call destroy_blk(Gn)
+      if (allocated(Gn)) deallocate(Gn)
+    else
+      call delete_trid_fromGPU(Gn)
+    end if   
+#:else
     if (negf%tDestroyESH) then
       call destroy_tridiag_blk(ESH)
       if (allocated(ESH)) deallocate(ESH)
@@ -583,9 +609,10 @@ CONTAINS
       if (allocated(Gr)) deallocate(Gr)
     end if   
     if (negf%tDestroyGn) then
-       call destroy_blk(Gn)
-       if (allocated(Gn)) deallocate(Gn)
+      call destroy_blk(Gn)
+      if (allocated(Gn)) deallocate(Gn)
     end if   
+#:endif
   end subroutine destroy_all_blk
 
   !**********************************************************************

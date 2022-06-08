@@ -855,7 +855,7 @@ contains
 
        call write_point(negf%verbose,negf%en_grid(i),Npoints)
        if (negf%en_grid(i)%cpu .ne. id) cycle
-
+       
        Ec = negf%en_grid(i)%Ec
        Er = real(Ec)
        zt = negf%en_grid(i)%wght
