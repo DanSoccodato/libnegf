@@ -11,7 +11,6 @@ module iterative_gpu
   use cudautils
   use cublas_v2
   use cusolverDn
-  use sparsekit_drv
   use, intrinsic :: ieee_arithmetic
 
   implicit none
@@ -35,11 +34,6 @@ module iterative_gpu
      module procedure calculate_Gr_tridiag_blocks_dp
   end interface calculate_Gr_tridiag_blocks
 
-  interface calculate_Gn_tridiag_blocks
-     module procedure calculate_Gn_tridiag_blocks_sp
-     module procedure calculate_Gn_tridiag_blocks_dp
-  end interface calculate_Gn_tridiag_blocks
-
   interface calculate_single_transmission_2_contacts
      module procedure calculate_single_transmission_2_contacts_sp
      module procedure calculate_single_transmission_2_contacts_dp
@@ -54,7 +48,7 @@ module iterative_gpu
      module procedure get_tun_mask_sp 
      module procedure get_tun_mask_dp
   end interface get_tun_mask 
-
+  
 contains
 
   subroutine calculate_gsmr_blocks_sp(negf,ESH,sbl,ebl,gsmr,keepall)
@@ -483,180 +477,7 @@ contains
             
   end subroutine check_convergence_vec
 
-  subroutine calculate_Gn_tridiag_blocks_sp(negf,ESH,SelfEneR,frm,ref,struct,gsmr,Gr,Gn)
-    type(TNegf), intent(in) :: negf    
-    type(c_DNS), dimension(:,:), intent(in) :: ESH, Gr
-    type(c_DNS), dimension(:), intent(in) :: SelfEneR, gsmr
-    real(sp), dimension(:), intent(in) :: frm
-    integer, intent(in) :: ref
-    type(Tstruct_info), intent(in) :: struct
-    type(c_DNS), dimension(:,:), intent(inout) :: Gn
-
-    !Work
-    type(CublasHandle) :: hh
-    complex(sp), parameter :: one = (1.0_sp, 0.0_sp)
-    complex(sp), parameter :: zero = (0.0_sp, 0.0_sp)
-    complex(sp), parameter :: minusone = (-1.0_sp, 0.0_sp)
-    type(c_DNS), dimension(:,:), allocatable :: Sigma_n
-    type(c_DNS) :: work1, Gam
-    complex(sp) :: frmdiff
-    integer :: i, j
-    integer :: nbl, ncont, cb
-    real(sp) :: summ
-
-    ncont = struct%num_conts
-    nbl = struct%num_PLs
-
-    hh = negf%hcublas
-
-    !build Sigma_n from SelfEneR
-    call allocate_blk_dns(Sigma_n, nbl)
-    call init_tridiag_blk(Sigma_n, ESH)
-
-    if (allocated(negf%inter)) then
-      call negf%inter%get_sigma_n(Sigma_n, negf%ie)
-    end if
-
-   call copy_trid_toGPU(Sigma_n)
-
-    do j=1,ncont
-      frmdiff = cmplx(frm(j) - frm(ref),0.0_sp,sp)
-      if (j.NE.ref .AND. ABS(frmdiff).GT.EPS) THEN
-        cb=struct%cblk(j) ! block corresponding to contact j
-        call createAll(Gam,SelfEneR(j)%nrow,SelfEneR(j)%ncol)
-        call spectral_gpu(SelfEner(j)%val, Gam%val)
-        call add_cublas(hh, Sigma_n(cb,cb)%val, Sigma_n(cb,cb)%val, frmdiff, Gam%val)
-        call destroyAll(Gam)
-      endif
-    end do
-
-    call calculate_sigma_n()
-
-    call createAll(work1,Sigma_n(1,1)%nrow, Gr(1,1)%nrow)
-    call matmul_gpu(hh, one, Sigma_n(1,1)%val, Gr(1,1)%val, zero, work1%val, 'dag_2nd')
-    call matmul_gpu(hh, one, Gr(1,1)%val, work1%val, zero, Gn(1,1)%val)
-    call destroyAll(work1)
-      
-    if (nbl .eq. 1) then
-      call destroy_tridiag_blk(Sigma_n) 
-      call deallocate_blk_dns(Sigma_n)
-      return
-    endif                
-
-    !Explicit formulae:
-    !Gn(i+1,i) = gsmr(i+1)*[Sigma(i+1,i)Ga(i,i) + Sigma(i+1,i+1)Ga(i+1,i) - Tr(i+1,i)Gn(i,i)]
-    !Gn(i,i+1) = [Gr(i,i)Sigma(i,i+1) + Gr(i,i+1)Sigma(i+1,i+1) - Gn(i,i)Ta(i,i+1)] * gsma(i+1)
-    !Use Hermitian property of Gn:
-    !Gn(i,i+1) = Gn(i+1,i)^dag
-    !Gn(i+1,i+1) = gsmr(i+1) * [Sigma(i+1,i)Ga(i,i+1) + Sigma(i+1,i+1)Ga(i+1,i+1) - Tr(i+1,i)Gn(i,i+1)]
-    !Implementation exploits cumulative sum of prealloc_mult, C = C + A*B
-
-    do i = 1, nbl-1
-
-        call createAll(work1,Sigma_n(i+1,i)%nrow,Gr(i,i)%nrow)
-        call matmul_gpu(hh, one, Sigma_n(i+1,i)%val, Gr(i,i)%val, zero, work1%val, 'dag_2nd')
-        call matmul_gpu(hh, one, Sigma_n(i+1,i+1)%val, Gr(i,i+1)%val, one, work1%val, 'dag_2nd')
-
-        call copyToGPU(ESH(i+1,i))
-        call matmul_gpu(hh, minusOne, ESH(i+1,i)%val, Gn(i,i)%val, one, work1%val)
-        call deleteGPU(ESH(i+1,i))
-
-        call matmul_gpu(hh, one, gsmr(i+1)%val, work1%val, zero, Gn(i+1,i)%val)
-        call destroyAll(work1)
-
-        call dagger_gpu(Gn(i+1,i)%val,Gn(i,i+1)%val)
-
-        call createAll(work1, Sigma_n(i+1,i)%nrow, Gr(i+1,i)%nrow)
-        call matmul_gpu(hh, one,Sigma_n(i+1,i)%val, Gr(i+1,i)%val, zero, work1%val, 'dag_2nd')
-
-        call matmul_gpu(hh, one,Sigma_n(i+1,i+1)%val, Gr(i+1,i+1)%val, one, work1%val, 'dag_2nd')
-
-        call copyToGPU(ESH(i+1,i))
-        call matmul_gpu(hh, minusOne, ESH(i+1,i)%val, Gn(i,i+1)%val, one, work1%val)
-        call deleteGPU(ESH(i+1,i))
-
-
-        call matmul_gpu(hh, one,gsmr(i+1)%val, work1%val, zero, Gn(i+1,i+1)%val)
-        call destroyAll(work1)
-
-    end do
-
-    call destroy_tridiag_blk(Sigma_n)
-    call deallocate_blk_dns(Sigma_n)
- 
-    contains
-    ! Recursive calculation of Sigma_n:      
-    ! gns(i+1) = gsmr(i+1) Sigma(i+1,i+1) gsmr(i+1)^dag
-    ! Sigma(i,i) = Sigma(i,i) + Tr(i,i+1) gns(i+1) Ta(i+1,i) 
-    !                         - Tr(i,i+1) gsmr(i+1) Sigma(i+1,i) 
-    !                         - Sigma(i,i+1) gsmr^dag(i+1) Ta(i+1,i)]
-    ! 
-    subroutine calculate_sigma_n()      
-      !Work
-      type(z_DNS) :: work, gns 
-
-      ! if nbl = 1 => Sigma_n(1,1) is ready
-      if (nbl.eq.1) return
-      !g^n(nbl) = gsmr(nbl) Sigma(nbl,nbl) gsma(nbl)
-      call createAll(work1, gsmr(nbl)%nrow, Sigma_n(nbl,nbl)%ncol)
-      call createAll(gns, work1%nrow, gsmr(nbl)%nrow)
-      call matmul_gpu(hh, one, gsmr(nbl)%val, Sigma_n(nbl,nbl)%val, zero, work1%val)
-      call matmul_gpu(hh, one, work1%val, gsmr(nbl)%val, zero, gns%val, 'dag_2nd')
-      call destroyAll(work1)
-
-      do i = nbl-1, 1, -1
-        !work1 = Tr(i,i+1) gns(i+1) Ta(i+1,i)
-        ! Tr(i,i+1) = ESH(i,i+1);  Ta(i+1,i) = ESH(i,i+1)^dag
-        call createAll(work, ESH(i,i+1)%nrow, gns%ncol)
-
-
-        call copyToGPU(ESH(i,i+1))
-        call matmul_gpu(hh, one, ESH(i,i+1)%val, gns%val, zero, work%val)
-        call matmul_gpu(hh, one, work%val, ESH(i,i+1)%val, one, Sigma_n(i,i)%val, 'dag_2nd')
-        call deleteGPU(ESH(i,i+1))
-
-        call destroyAll(work)
-        call destroyAll(gns)
-
-        !work2 = Sigma(i,i+1) gsmr^dag(i+1) Ta(i+1,i)
-        call createAll(work, Sigma_n(i,i+1)%nrow, gsmr(i+1)%ncol)
-
-        call matmul_gpu(hh, one, Sigma_n(i,i+1)%val, gsmr(i+1)%val, zero, work%val, 'dag_2nd')
-        call copyToGPU(ESH(i,i+1))
-        call matmul_gpu(hh, minusOne, work%val, ESH(i,i+1)%val, one, Sigma_n(i,i)%val, 'dag_2nd')
-        call deleteGPU(ESH(i,i+1))
-
-        call destroyAll(work)
-
-        !work3 = ESH(i,i+1) gsmr(i+1) Sigma(i+1,i)
-        call createAll(work, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)
-
-        call copyToGPU(ESH(i,i+1))
-        call matmul_gpu(hh, one, ESH(i,i+1)%val, gsmr(i+1)%val, zero, work%val)
-        call deleteGPU(ESH(i,i+1))
-        call matmul_gpu(hh, minusOne, work%val, Sigma_n(i+1,i)%val, one, Sigma_n(i,i)%val)
-
-        call destroyAll(work)
-
-        if (i > 1) then
-          !gns(i) = gsmr(i) * Sigma_n(i,i) * gsmr^dag(i)
-          call createAll(work, gsmr(i)%nrow, Sigma_n(i,i)%ncol)
-          call createAll(gns, work%nrow, gsmr(i)%nrow)
-
-          call matmul_gpu(hh, one, gsmr(i)%val, Sigma_n(i,i)%val, zero, work%val)
-          call matmul_gpu(hh, one, work%val, gsmr(i)%val, zero, gns%val, 'dag_2nd')
-
-          call destroyAll(work)
-        end if
-
-      end do
-
-    end subroutine calculate_sigma_n
-
-  end subroutine calculate_Gn_tridiag_blocks_sp
-
-
-  subroutine calculate_Gn_tridiag_blocks_dp(negf,ESH,SelfEneR,frm,ref,struct,gsmr,Gr,Gn)
+  subroutine calculate_Gn_tridiag_blocks(negf,ESH,SelfEneR,frm,ref,struct,gsmr,Gr,Gn)
     type(TNegf), intent(in) :: negf    
     type(z_DNS), dimension(:,:), intent(in) :: ESH, Gr
     type(z_DNS), dimension(:), intent(in) :: SelfEneR, gsmr
@@ -675,7 +496,6 @@ contains
     complex(dp) :: frmdiff
     integer :: i, j
     integer :: nbl, ncont, cb
-    real(dp) :: summ
 
     ncont = struct%num_conts
     nbl = struct%num_PLs
@@ -826,7 +646,7 @@ contains
 
     end subroutine calculate_sigma_n
 
-  end subroutine calculate_Gn_tridiag_blocks_dp
+  end subroutine calculate_Gn_tridiag_blocks
 
   subroutine calculate_single_transmission_2_contacts_sp(negf,ni,nf,ESH,SelfEneR,cblk,tun_proj,Gr,TUN)
     type(Tnegf), intent(in) :: negf 
@@ -1289,7 +1109,7 @@ contains
   end subroutine get_tun_mask_dp
 
 !---------------------------------------------------
-
+ 
   subroutine init_tridiag_blk(Matrix,S)
     type(z_DNS), dimension(:,:) :: Matrix,S
 
