@@ -41,8 +41,7 @@ module libnegf
  use libmpifx_module, only : mpifx_comm
 #:endif
 #:if defined("GPU")
- use cublas_v2
- use cusolverDn
+ use iso_c_binding
 #:endif
  use clock
  implicit none
@@ -213,6 +212,34 @@ module libnegf
    logical(c_bool) :: isSid
  end type lnparams
   !-----------------------------------------------------------------------------
+#:if defined("GPU")  
+  interface
+
+     integer(c_int) function cu_cublasInit(hcublas) bind(C, name='cu_cublasInit')
+       use iso_c_binding
+       import cublasHandle
+       type(cublasHandle) :: hcublas
+     end function cu_cublasInit
+
+     integer(c_int) function cu_cublasFinalize(hcublas) bind(C, name='cu_cublasFinalize')
+       use iso_c_binding
+       import cublasHandle
+       type(cublasHandle), value :: hcublas
+     end function cu_cublasFinalize
+
+     integer(c_int) function cu_cusolverInit(hcusolver) bind(C, name='cu_cusolverInit')
+       use iso_c_binding
+       import cusolverDnHandle
+       type(cusolverDnHandle) :: hcusolver
+     end function cu_cusolverInit
+
+     integer(c_int) function cu_cusolverFinalize(hcusolver) bind(C, name='cu_cusolverFinalize')
+       use iso_c_binding
+       import cusolverDnHandle
+       type(cusolverDnHandle), value :: hcusolver
+     end function cu_cusolverFinalize
+  end interface
+#:endif
 
 contains
 
@@ -224,6 +251,33 @@ contains
   !!  H and S are also read-in from files
   !!  Some parameters are still hard-coded and need to be set from api
   !--------------------------------------------------------------------
+
+#:if defined("GPU")  
+   subroutine cublasInitialize(hcublas)
+     type(cublasHandle), intent(inout) :: hcublas
+     integer :: err
+     err = cu_cublasInit(hcublas)
+   end subroutine cublasInitialize
+     
+   subroutine cublasFinalize(hcublas)
+     type(cublasHandle), intent(inout) :: hcublas
+     integer :: err
+     err = cu_cublasFinalize(hcublas)
+   end subroutine cublasFinalize
+
+   subroutine cusolverInitialize(hcusolver)
+     type(cusolverDnHandle), intent(inout) :: hcusolver
+     integer :: err
+     err = cu_cusolverInit(hcusolver)
+   end subroutine cusolverInitialize
+     
+   subroutine cusolverFinalize(hcusolver)
+     type(cusolverDnHandle), intent(inout) :: hcusolver
+     integer :: err
+     err = cu_cusolverFinalize(hcusolver)
+   end subroutine cusolverFinalize
+#:endif
+
   subroutine init_negf(negf)
     type(Tnegf) :: negf
 
@@ -233,8 +287,8 @@ contains
     negf%form%type = "PETSc"
     negf%form%fmt = "F"
 #:if defined("GPU")
-    istat = cublasCreate(negf%hcublas)
-    istat = cusolverDnCreate(negf%hcusolver)
+    call cublasInitialize(negf%hcublas)
+    call cusolverInitialize(negf%hcusolver)
 #:endif
     ! Allocate zero contacts by default. The actual number of contacts
     ! can be set calling init_contacts again.
@@ -1143,8 +1197,8 @@ contains
     call destroy_surface_green_cache(negf)
     call WriteMemInfo(6)
  #:if defined("GPU")
-    istat = cublasDestroy(negf%hcublas)
-    istat = cusolverDnDestroy(negf%hcusolver)
+    call cublasFinalize(negf%hcublas)
+    call cusolverFinalize(negf%hcusolver)
  #:endif
 
   end subroutine destroy_negf

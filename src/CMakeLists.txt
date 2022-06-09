@@ -42,7 +42,7 @@ endif()
 if(WITH_TRANSPORT_GPU)
   list(APPEND sources-fpp cudautils.F90)
   list(APPEND sources-fpp iterative_gpu.F90)
-  list(APPEND sources-fpp cublas_interface.F90)
+  set(sources-cuda gpuroutines.cu)
 else()
   list(APPEND sources-fpp iterative_cpu.F90)
 endif()
@@ -77,7 +77,7 @@ foreach(fppsrc IN LISTS sources-fpp)
 endforeach()
 
 #add_library(negf ${sources-fpp-f90} ${sources-f90} $<TARGET_OBJECTS:sparskit_objlib>)
-add_library(negf ${sources-fpp-f90} ${sources-f90})
+add_library(negf ${sources-fpp-f90} ${sources-f90} ${sources-cuda})
 
 target_sources(negf PRIVATE $<TARGET_OBJECTS:syscalls_objlib>)
 target_include_directories(negf PUBLIC
@@ -86,6 +86,7 @@ target_include_directories(negf PUBLIC
 set(BUILD_MOD_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 set_target_properties(negf PROPERTIES Fortran_MODULE_DIRECTORY ${BUILD_MOD_DIR})
+set_property(TARGET negf PROPERTY CUDA_ARCHITECTURES OFF)
 
 if(WITH_MPI)
   find_package(MPI REQUIRED)

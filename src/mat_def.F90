@@ -22,6 +22,7 @@
 Module mat_def
   use ln_precision
   use ln_allocation
+  use iso_c_binding
   implicit none
   private
 
@@ -184,6 +185,7 @@ Type z_DNS
   integer :: nrow = 0
   integer :: ncol = 0
   complex(kind=dp), DIMENSION(:,:), ALLOCATABLE :: val
+  type(c_ptr) :: d_addr
 end Type z_DNS
 
 Type r_DNS3
@@ -296,6 +298,7 @@ Type c_DNS
   integer :: nrow = 0
   integer :: ncol = 0
   complex(kind=sp), DIMENSION(:,:), ALLOCATABLE :: val
+  type(c_ptr) :: d_addr
 end Type c_DNS
 ! *******************************************************************
 contains

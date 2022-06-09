@@ -4,13 +4,11 @@ module iterative_gpu
   use ln_allocation
   use mat_def
   use ln_structure, only : TStruct_Info
-  use lib_param, only : MAXNCONT, Tnegf, intarray
+  use lib_param, only : MAXNCONT, Tnegf, intarray, cusolverDnHandle, cublasHandle
   use mpi_globals, only : id, numprocs, id0
   use sparsekit_drv, only: csr2blk_sod
   use clock
   use cudautils
-  use cublas_v2
-  use cusolverDn
   use, intrinsic :: ieee_arithmetic
 
   implicit none
@@ -89,14 +87,14 @@ contains
 
     call createAll(gsmr(sbl),nrow,nrow)
     call copyToGPU(ESH(sbl,sbl))
-    call inverse_gpu(hh, hhsol, ESH(sbl,sbl)%val, gsmr(sbl)%val, istat)
+    call inverse_gpu(hh, hhsol, ESH(sbl,sbl), gsmr(sbl), istat)
     call deleteGPU(ESH(sbl,sbl))
 
     do i=sbl-1,ebl,-1
 
        call createAll(work1, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)    
        call copyToGPU(ESH(i,i+1))
-       call matmul_gpu(hh, one, ESH(i,i+1)%val, gsmr(i+1)%val, zero, work1%val)
+       call matmul_gpu(hh, one, ESH(i,i+1), gsmr(i+1), zero, work1)
        call deleteGPU(ESH(i,i+1))
 
        if (.not.keep) then
@@ -105,20 +103,20 @@ contains
 
        call createAll(work2, work1%nrow, ESH(i+1,i)%ncol)
        call copyToGPU(ESH(i+1,i))
-       call matmul_gpu(hh, one, work1%val, ESH(i+1,i)%val, zero, work2%val)
+       call matmul_gpu(hh, one, work1, ESH(i+1,i), zero, work2)
        call deleteGPU(ESH(i+1,i))
 
        call destroyAll(work1)
 
        call createAll(work1,  ESH(i,i)%nrow, ESH(i,i)%ncol)
        call copyToGPU(ESH(i,i))
-       call add_cublas(hh, work1%val, ESH(i,i)%val, mone, work2%val)
+       call matsum_gpu(hh, one, ESH(i,i), mone, work2, work1)
        call deleteGPU(ESH(i,i))
 
        call destroyAll(work2)
 
        call createAll(gsmr(i), work1%nrow, work1%ncol)
-       call inverse_gpu(hh, hhsol, work1%val, gsmr(i)%val, istat)    
+       call inverse_gpu(hh, hhsol, work1, gsmr(i), istat)    
        call destroyAll(work1)
 
     end do
@@ -164,14 +162,14 @@ contains
 
     call createAll(gsmr(sbl),nrow,nrow)
     call copyToGPU(ESH(sbl,sbl))
-    call inverse_gpu(hh, hhsol, ESH(sbl,sbl)%val, gsmr(sbl)%val, istat)
+    call inverse_gpu(hh, hhsol, ESH(sbl,sbl), gsmr(sbl), istat)
     call deleteGPU(ESH(sbl,sbl))
 
     do i=sbl-1,ebl,-1
 
        call createAll(work1, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)    
        call copyToGPU(ESH(i,i+1))
-       call matmul_gpu(hh, one, ESH(i,i+1)%val, gsmr(i+1)%val, zero, work1%val)
+       call matmul_gpu(hh, one, ESH(i,i+1), gsmr(i+1), zero, work1)
        call deleteGPU(ESH(i,i+1))
 
        if (.not.keep) then
@@ -180,20 +178,20 @@ contains
 
        call createAll(work2, work1%nrow, ESH(i+1,i)%ncol)
        call copyToGPU(ESH(i+1,i))
-       call matmul_gpu(hh, one, work1%val, ESH(i+1,i)%val, zero, work2%val)
+       call matmul_gpu(hh, one, work1, ESH(i+1,i), zero, work2)
        call deleteGPU(ESH(i+1,i))
 
        call destroyAll(work1)
 
        call createAll(work1,  ESH(i,i)%nrow, ESH(i,i)%ncol)
        call copyToGPU(ESH(i,i))
-       call add_cublas(hh, work1%val, ESH(i,i)%val, mone, work2%val)
+       call matsum_gpu(hh, one, ESH(i,i), mone, work2, work1)
        call deleteGPU(ESH(i,i))
 
        call destroyAll(work2)
 
        call createAll(gsmr(i), work1%nrow, work1%ncol)
-       call inverse_gpu(hh, hhsol, work1%val, gsmr(i)%val, istat)    
+       call inverse_gpu(hh, hhsol, work1, gsmr(i), istat)    
        call destroyAll(work1)
 
     end do
@@ -230,27 +228,27 @@ contains
        if (nbl.eq.1) then
           call createAll(Gr(sbl,sbl), ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
           call copyToGPU(ESH(sbl,sbl))
-          call inverse_gpu(hh, hhsol, ESH(sbl,sbl)%val, Gr(sbl,sbl)%val, istat)
+          call inverse_gpu(hh, hhsol, ESH(sbl,sbl), Gr(sbl,sbl), istat)
           call deleteGPU(ESH(sbl,sbl))
        else
           call createAll(work1, ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
           call copyToGPU(ESH(sbl,sbl))
-          call copy_mat_gpu(hh, ESH(sbl,sbl)%val, work1%val)
+          call copy_mat_gpu(hh, ESH(sbl,sbl), work1)
           call deleteGPU(ESH(sbl,sbl))
 
           if (sbl+1.le.nbl) then
              call createAll(work2, ESH(sbl,sbl+1)%nrow, gsmr(sbl+1)%ncol)
              call copyToGPU(ESH(sbl,sbl+1))
-             call matmul_gpu(hh, one, ESH(sbl,sbl+1)%val, gsmr(sbl+1)%val, zero, work2%val)
+             call matmul_gpu(hh, one, ESH(sbl,sbl+1), gsmr(sbl+1), zero, work2)
              call deleteGPU(ESH(sbl,sbl+1))
 
              call createAll(work3, work2%nrow, ESH(sbl+1,sbl)%ncol)
              call copyToGPU(ESH(sbl+1,sbl))
-             call matmul_gpu(hh, one, work2%val, ESH(sbl+1,sbl)%val, zero, work3%val)
+             call matmul_gpu(hh, one, work2, ESH(sbl+1,sbl), zero, work3)
              call deleteGPU(ESH(sbl+1,sbl))
 
              call copyToGPU(ESH(sbl,sbl))
-             call add_cublas(hh, work1%val, ESH(sbl,sbl)%val, mone, work3%val)
+             call matsum_gpu(hh, one, ESH(sbl,sbl), mone, work3, work1)
              call deleteGPU(ESH(sbl,sbl))
 
              call destroyAll(work2)
@@ -261,7 +259,7 @@ contains
           end if
 
           call createAll(Gr(sbl,sbl), work1%nrow, work1%ncol)
-          call inverse_gpu(hh, hhsol, work1%val, Gr(sbl,sbl)%val, istat)
+          call inverse_gpu(hh, hhsol, work1, Gr(sbl,sbl), istat)
           call destroyAll(work1)
        endif
        return
@@ -274,25 +272,26 @@ contains
           call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
           call createAll(Gr(i,i-1), work1%nrow, Gr(i-1,i-1)%ncol)
           call copyToGPU(ESH(i,i-1))
-          call matmul_gpu(hh, one, gsmr(i)%val, ESH(i,i-1)%val, zero, work1%val)
+          call matmul_gpu(hh, one, gsmr(i), ESH(i,i-1), zero, work1)
           call deleteGPU(ESH(i,i-1))
-          call matmul_gpu(hh, mone, work1%val, Gr(i-1,i-1)%val, zero, Gr(i,i-1)%val)
+          call matmul_gpu(hh, mone, work1, Gr(i-1,i-1), zero, Gr(i,i-1))
 
           call destroyAll(work1)
 
           call createAll(work2, ESH(i-1,i)%nrow, gsmr(i)%ncol)
           call createAll(Gr(i-1,i), Gr(i-1,i-1)%nrow, work2%ncol)
           call copyToGPU(ESH(i-1,i))
-          call matmul_gpu(hh, one, ESH(i-1,i)%val, gsmr(i)%val, zero, work2%val)
+          call matmul_gpu(hh, one, ESH(i-1,i), gsmr(i), zero, work2)
           call deleteGPU(ESH(i-1,i))
-          call matmul_gpu(hh, mone, Gr(i-1,i-1)%val, work2%val, zero, Gr(i-1,i)%val)
+          call matmul_gpu(hh, mone, Gr(i-1,i-1), work2, zero, Gr(i-1,i))
 
           call createAll(work1, Gr(i,i-1)%nrow, work2%ncol)
-          call matmul_gpu(hh, mone, Gr(i,i-1)%val, work2%val, zero, work1%val)
+          call matmul_gpu(hh, mone, Gr(i,i-1), work2, zero, work1)
 
           call destroyAll(work2)
           call createAll(Gr(i,i), gsmr(i)%nrow, gsmr(i)%ncol)
-          call add_cublas(hh, Gr(i,i)%val, gsmr(i)%val, one, work1%val)
+          call matsum_gpu(hh, one, gsmr(i), one, work1, Gr(i,i))
+
           call destroyAll(work1)
        end do
     else
@@ -331,27 +330,27 @@ contains
        if (nbl.eq.1) then
           call createAll(Gr(sbl,sbl), ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
           call copyToGPU(ESH(sbl,sbl))
-          call inverse_gpu(hh, hhsol, ESH(sbl,sbl)%val, Gr(sbl,sbl)%val, istat)
+          call inverse_gpu(hh, hhsol, ESH(sbl,sbl), Gr(sbl,sbl), istat)
           call deleteGPU(ESH(sbl,sbl))
        else
           call createAll(work1, ESH(sbl,sbl)%nrow, ESH(sbl,sbl)%ncol)
           call copyToGPU(ESH(sbl,sbl))
-          call copy_mat_gpu(hh, ESH(sbl,sbl)%val, work1%val)
+          call copy_mat_gpu(hh, ESH(sbl,sbl), work1)
           call deleteGPU(ESH(sbl,sbl))
 
           if (sbl+1.le.nbl) then
              call createAll(work2, ESH(sbl,sbl+1)%nrow, gsmr(sbl+1)%ncol)
              call copyToGPU(ESH(sbl,sbl+1))
-             call matmul_gpu(hh, one, ESH(sbl,sbl+1)%val, gsmr(sbl+1)%val, zero, work2%val)
+             call matmul_gpu(hh, one, ESH(sbl,sbl+1), gsmr(sbl+1), zero, work2)
              call deleteGPU(ESH(sbl,sbl+1))
 
              call createAll(work3, work2%nrow, ESH(sbl+1,sbl)%ncol)
              call copyToGPU(ESH(sbl+1,sbl))
-             call matmul_gpu(hh, one, work2%val, ESH(sbl+1,sbl)%val, zero, work3%val)
+             call matmul_gpu(hh, one, work2, ESH(sbl+1,sbl), zero, work3)
              call deleteGPU(ESH(sbl+1,sbl))
 
              call copyToGPU(ESH(sbl,sbl))
-             call add_cublas(hh, work1%val, ESH(sbl,sbl)%val, mone, work3%val)
+             call matsum_gpu(hh, one, ESH(sbl,sbl), mone, work3, work1)
              call deleteGPU(ESH(sbl,sbl))
 
              call destroyAll(work2)
@@ -362,7 +361,7 @@ contains
           end if
 
           call createAll(Gr(sbl,sbl), work1%nrow, work1%ncol)
-          call inverse_gpu(hh, hhsol, work1%val, Gr(sbl,sbl)%val, istat)
+          call inverse_gpu(hh, hhsol, work1, Gr(sbl,sbl), istat)
           call destroyAll(work1)
        endif
        return
@@ -375,25 +374,25 @@ contains
           call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
           call createAll(Gr(i,i-1), work1%nrow, Gr(i-1,i-1)%ncol)
           call copyToGPU(ESH(i,i-1))
-          call matmul_gpu(hh, one, gsmr(i)%val, ESH(i,i-1)%val, zero, work1%val)
+          call matmul_gpu(hh, one, gsmr(i), ESH(i,i-1), zero, work1)
           call deleteGPU(ESH(i,i-1))
-          call matmul_gpu(hh, mone, work1%val, Gr(i-1,i-1)%val, zero, Gr(i,i-1)%val)
+          call matmul_gpu(hh, mone, work1, Gr(i-1,i-1), zero, Gr(i,i-1))
 
           call destroyAll(work1)
 
           call createAll(work2, ESH(i-1,i)%nrow, gsmr(i)%ncol)
           call createAll(Gr(i-1,i), Gr(i-1,i-1)%nrow, work2%ncol)
           call copyToGPU(ESH(i-1,i))
-          call matmul_gpu(hh, one, ESH(i-1,i)%val, gsmr(i)%val, zero, work2%val)
+          call matmul_gpu(hh, one, ESH(i-1,i), gsmr(i), zero, work2)
           call deleteGPU(ESH(i-1,i))
-          call matmul_gpu(hh, mone, Gr(i-1,i-1)%val, work2%val, zero, Gr(i-1,i)%val)
+          call matmul_gpu(hh, mone, Gr(i-1,i-1), work2, zero, Gr(i-1,i))
 
           call createAll(work1, Gr(i,i-1)%nrow, work2%ncol)
-          call matmul_gpu(hh, mone, Gr(i,i-1)%val, work2%val, zero, work1%val)
+          call matmul_gpu(hh, mone, Gr(i,i-1), work2, zero, work1)
 
           call destroyAll(work2)
           call createAll(Gr(i,i), gsmr(i)%nrow, gsmr(i)%ncol)
-          call add_cublas(hh, Gr(i,i)%val, gsmr(i)%val, one, work1%val)
+          call matsum_gpu(hh, one, gsmr(i), one, work1, Gr(i,i))
           call destroyAll(work1)
        end do
     else
@@ -417,14 +416,14 @@ contains
     hh = negf%hcublas
     if (gpu .eq. .true.) then
        !write(*,*) '~-~-~-~-',nome,' check convergence GPU: ~-~-~-~-'     
-       call checksum(hh, T(1,1)%val, nome//'(1,1)')
+       call checksum(hh, T(1,1), nome//'(1,1)')
 
        do i= 2,nbl-1
           write(ci,'(i1)') i
           write(cim1,'(i1)') i-1
-          call checksum(hh, T(i,i)%val, nome//'('//ci//','//ci//')')
-          call checksum(hh, T(i-1,i)%val, nome//'('//cim1//','//ci//')')
-          call checksum(hh, T(i,i-1)%val, nome//'('//ci//','//cim1//')')
+          call checksum(hh, T(i,i), nome//'('//ci//','//ci//')')
+          call checksum(hh, T(i-1,i), nome//'('//cim1//','//ci//')')
+          call checksum(hh, T(i,i-1), nome//'('//ci//','//cim1//')')
        end do
        !write(*,*) '~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-'     
     else
@@ -462,7 +461,7 @@ contains
 
        do i= 2,nbl
           write(ci,'(i1)') i
-          call checksum(hh, T(i)%val, nome//'('//ci//')')
+          call checksum(hh, T(i), nome//'('//ci//')')
        end do
        !write(*,*) '~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-'     
     else 
@@ -517,8 +516,8 @@ contains
       if (j.NE.ref .AND. ABS(frmdiff).GT.EPS) THEN
         cb=struct%cblk(j) ! block corresponding to contact j
         call createAll(Gam,SelfEneR(j)%nrow,SelfEneR(j)%ncol)
-        call spectral_gpu(SelfEner(j)%val, Gam%val)
-        call add_cublas(hh, Sigma_n(cb,cb)%val, Sigma_n(cb,cb)%val, frmdiff, Gam%val)
+        call spectral_gpu(hh, SelfEner(j), Gam)
+        call matsum_gpu(hh, one, Sigma_n(cb,cb), frmdiff, Gam, Sigma_n(cb,cb))
         call destroyAll(Gam)
       endif
     end do
@@ -526,8 +525,8 @@ contains
     call calculate_sigma_n()
 
     call createAll(work1,Sigma_n(1,1)%nrow, Gr(1,1)%nrow)
-    call matmul_gpu(hh, one, Sigma_n(1,1)%val, Gr(1,1)%val, zero, work1%val, 'dag_2nd')
-    call matmul_gpu(hh, one, Gr(1,1)%val, work1%val, zero, Gn(1,1)%val)
+    call matmul_gpu(hh, one, Sigma_n(1,1), Gr(1,1), zero, work1, 'dag_2nd')
+    call matmul_gpu(hh, one, Gr(1,1), work1, zero, Gn(1,1))
     call destroyAll(work1)
       
     if (nbl .eq. 1) then
@@ -547,29 +546,29 @@ contains
     do i = 1, nbl-1
 
         call createAll(work1,Sigma_n(i+1,i)%nrow,Gr(i,i)%nrow)
-        call matmul_gpu(hh, one, Sigma_n(i+1,i)%val, Gr(i,i)%val, zero, work1%val, 'dag_2nd')
-        call matmul_gpu(hh, one, Sigma_n(i+1,i+1)%val, Gr(i,i+1)%val, one, work1%val, 'dag_2nd')
+        call matmul_gpu(hh, one, Sigma_n(i+1,i), Gr(i,i), zero, work1, 'dag_2nd')
+        call matmul_gpu(hh, one, Sigma_n(i+1,i+1), Gr(i,i+1), one, work1, 'dag_2nd')
 
         call copyToGPU(ESH(i+1,i))
-        call matmul_gpu(hh, minusOne, ESH(i+1,i)%val, Gn(i,i)%val, one, work1%val)
+        call matmul_gpu(hh, minusOne, ESH(i+1,i), Gn(i,i), one, work1)
         call deleteGPU(ESH(i+1,i))
 
-        call matmul_gpu(hh, one, gsmr(i+1)%val, work1%val, zero, Gn(i+1,i)%val)
+        call matmul_gpu(hh, one, gsmr(i+1), work1, zero, Gn(i+1,i))
         call destroyAll(work1)
 
-        call dagger_gpu(Gn(i+1,i)%val,Gn(i,i+1)%val)
+        call dagger_gpu(hh, Gn(i+1,i),Gn(i,i+1))
 
         call createAll(work1, Sigma_n(i+1,i)%nrow, Gr(i+1,i)%nrow)
-        call matmul_gpu(hh, one,Sigma_n(i+1,i)%val, Gr(i+1,i)%val, zero, work1%val, 'dag_2nd')
+        call matmul_gpu(hh, one,Sigma_n(i+1,i), Gr(i+1,i), zero, work1, 'dag_2nd')
 
-        call matmul_gpu(hh, one,Sigma_n(i+1,i+1)%val, Gr(i+1,i+1)%val, one, work1%val, 'dag_2nd')
+        call matmul_gpu(hh, one,Sigma_n(i+1,i+1), Gr(i+1,i+1), one, work1, 'dag_2nd')
 
         call copyToGPU(ESH(i+1,i))
-        call matmul_gpu(hh, minusOne, ESH(i+1,i)%val, Gn(i,i+1)%val, one, work1%val)
+        call matmul_gpu(hh, minusOne, ESH(i+1,i), Gn(i,i+1), one, work1)
         call deleteGPU(ESH(i+1,i))
 
 
-        call matmul_gpu(hh, one,gsmr(i+1)%val, work1%val, zero, Gn(i+1,i+1)%val)
+        call matmul_gpu(hh, one,gsmr(i+1), work1, zero, Gn(i+1,i+1))
         call destroyAll(work1)
 
     end do
@@ -593,8 +592,8 @@ contains
       !g^n(nbl) = gsmr(nbl) Sigma(nbl,nbl) gsma(nbl)
       call createAll(work1, gsmr(nbl)%nrow, Sigma_n(nbl,nbl)%ncol)
       call createAll(gns, work1%nrow, gsmr(nbl)%nrow)
-      call matmul_gpu(hh, one, gsmr(nbl)%val, Sigma_n(nbl,nbl)%val, zero, work1%val)
-      call matmul_gpu(hh, one, work1%val, gsmr(nbl)%val, zero, gns%val, 'dag_2nd')
+      call matmul_gpu(hh, one, gsmr(nbl), Sigma_n(nbl,nbl), zero, work1)
+      call matmul_gpu(hh, one, work1, gsmr(nbl), zero, gns, 'dag_2nd')
       call destroyAll(work1)
 
       do i = nbl-1, 1, -1
@@ -604,8 +603,8 @@ contains
 
 
         call copyToGPU(ESH(i,i+1))
-        call matmul_gpu(hh, one, ESH(i,i+1)%val, gns%val, zero, work%val)
-        call matmul_gpu(hh, one, work%val, ESH(i,i+1)%val, one, Sigma_n(i,i)%val, 'dag_2nd')
+        call matmul_gpu(hh, one, ESH(i,i+1), gns, zero, work)
+        call matmul_gpu(hh, one, work, ESH(i,i+1), one, Sigma_n(i,i), 'dag_2nd')
         call deleteGPU(ESH(i,i+1))
 
         call destroyAll(work)
@@ -614,9 +613,9 @@ contains
         !work2 = Sigma(i,i+1) gsmr^dag(i+1) Ta(i+1,i)
         call createAll(work, Sigma_n(i,i+1)%nrow, gsmr(i+1)%ncol)
 
-        call matmul_gpu(hh, one, Sigma_n(i,i+1)%val, gsmr(i+1)%val, zero, work%val, 'dag_2nd')
+        call matmul_gpu(hh, one, Sigma_n(i,i+1), gsmr(i+1), zero, work, 'dag_2nd')
         call copyToGPU(ESH(i,i+1))
-        call matmul_gpu(hh, minusOne, work%val, ESH(i,i+1)%val, one, Sigma_n(i,i)%val, 'dag_2nd')
+        call matmul_gpu(hh, minusOne, work, ESH(i,i+1), one, Sigma_n(i,i), 'dag_2nd')
         call deleteGPU(ESH(i,i+1))
 
         call destroyAll(work)
@@ -625,9 +624,9 @@ contains
         call createAll(work, ESH(i,i+1)%nrow, gsmr(i+1)%ncol)
 
         call copyToGPU(ESH(i,i+1))
-        call matmul_gpu(hh, one, ESH(i,i+1)%val, gsmr(i+1)%val, zero, work%val)
+        call matmul_gpu(hh, one, ESH(i,i+1), gsmr(i+1), zero, work)
         call deleteGPU(ESH(i,i+1))
-        call matmul_gpu(hh, minusOne, work%val, Sigma_n(i+1,i)%val, one, Sigma_n(i,i)%val)
+        call matmul_gpu(hh, minusOne, work, Sigma_n(i+1,i), one, Sigma_n(i,i))
 
         call destroyAll(work)
 
@@ -636,8 +635,8 @@ contains
           call createAll(work, gsmr(i)%nrow, Sigma_n(i,i)%ncol)
           call createAll(gns, work%nrow, gsmr(i)%nrow)
 
-          call matmul_gpu(hh, one, gsmr(i)%val, Sigma_n(i,i)%val, zero, work%val)
-          call matmul_gpu(hh, one, work%val, gsmr(i)%val, zero, gns%val, 'dag_2nd')
+          call matmul_gpu(hh, one, gsmr(i), Sigma_n(i,i), zero, work)
+          call matmul_gpu(hh, one, work, gsmr(i), zero, gns, 'dag_2nd')
 
           call destroyAll(work)
         end if
@@ -662,7 +661,7 @@ contains
     type(CublasHandle) :: hh
     Integer :: ct1, bl1
     logical, dimension(:), allocatable :: tun_mask
-    Type(c_DNS) :: work1, work2, GAM1_dns, GA, TRS, AA
+    Type(c_DNS) :: work1, work2, GAM1_dns, TRS, AA
     complex(sp), parameter :: j = (0.0_sp,1.0_sp)  ! CMPX unity
     complex(sp), parameter :: mj = (0.0_sp,-1.0_sp) 
     complex(sp), parameter :: one = (1.0_sp, 0.0_sp)
@@ -687,40 +686,36 @@ contains
     endif
 
     bl1=cblk(ct1);
-    call createAll(GA, Gr(bl1,bl1)%ncol, Gr(bl1,bl1)%nrow)
-    call dagger_gpu(Gr(bl1,bl1)%val,GA%val)
 
     ! Computes the Gamma matrices
     call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
-    call spectral_gpu(SelfEneR(ct1)%val,GAM1_dns%val)
+    call spectral_gpu(hh, SelfEneR(ct1), GAM1_dns)
 
     ! Work to compute transmission matrix (Gamma G Gamma G)
     call createAll(work1, GAM1_dns%nrow, Gr(bl1,bl1)%ncol)
     call createAll(work2, work1%nrow, GAM1_dns%ncol)
-    call matmul_gpu(hh, one, GAM1_dns%val, Gr(bl1,bl1)%val, zero, work1%val)
-    call matmul_gpu(hh, one, work1%val, GAM1_dns%val, zero, work2%val)
+    call matmul_gpu(hh, one, GAM1_dns, Gr(bl1,bl1), zero, work1)
+    call matmul_gpu(hh, one, work1, GAM1_dns, zero, work2)
 
     call destroyAll(work1)
 
-    call createAll(work1, work2%nrow, GA%ncol)
-    call matmul_gpu(hh, one, work2%val, GA%val, zero, work1%val)
+    call createAll(work1, work2%nrow, Gr(bl1,bl1)%nrow)
+    call matmul_gpu(hh, one, work2, Gr(bl1,bl1), zero, work1,'dag_2nd')
     call destroyAll(work2)
 
-    call createAll(AA, GA%nrow, GA%ncol)
-    call add_gpu(j,Gr(bl1,bl1)%val,mj,GA%val,AA%val)
-    call destroyAll(GA)
+    call createAll(AA, Gr(bl1,bl1)%ncol, Gr(bl1,bl1)%nrow)
+    call matsum_gpu(hh, j, Gr(bl1,bl1), mj, Gr(bl1,bl1), AA, 'dag_2nd')
 
     call createAll(work2, GAM1_dns%nrow, AA%ncol)
-    call matmul_gpu(hh, one, GAM1_dns%val, AA%val, zero, work2%val)
+    call matmul_gpu(hh, one, GAM1_dns, AA, zero, work2)
     call destroyAll(GAM1_dns)
     call destroyAll(AA)
 
     call createAll(TRS, work1%nrow, work1%ncol)
-    call add_gpu(one,work2%val,mone,work1%val,TRS%val)
-    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
+    call matsum_gpu(hh, one, work2, mone, work1, TRS)
 
-    TUN = abs(real(trace_gpu(TRS%val, tun_mask)))
-    call deleteGPU(tun_mask)
+    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
+    call trace_gpu(hh, TRS, TUN, tun_mask)
     call log_deallocate(tun_mask)
 
     call destroyAll(TRS)
@@ -743,7 +738,7 @@ contains
     type(CublasHandle) :: hh
     Integer :: ct1, bl1
     logical, dimension(:), allocatable :: tun_mask
-    Type(z_DNS) :: work1, work2, GAM1_dns, GA, TRS, AA
+    Type(z_DNS) :: work1, work2, GAM1_dns, TRS, AA
     complex(dp), parameter ::    j = (0.0_dp,1.0_dp)  ! CMPX unity
     complex(dp), parameter ::    mj = (0.0_dp,-1.0_dp)  
     complex(dp), parameter :: one = (1.0_dp, 0.0_dp)
@@ -769,40 +764,36 @@ contains
     endif
 
     bl1=cblk(ct1);
-    call createAll(GA, Gr(bl1,bl1)%ncol, Gr(bl1,bl1)%nrow)
-    call dagger_gpu(Gr(bl1,bl1)%val,GA%val)
 
     ! Computes the Gamma matrices
     call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
-    call spectral_gpu(SelfEneR(ct1)%val,GAM1_dns%val)
+    call spectral_gpu(hh, SelfEneR(ct1), GAM1_dns)
 
     ! Work to compute transmission matrix (Gamma G Gamma G)
     call createAll(work1, GAM1_dns%nrow, Gr(bl1,bl1)%ncol)
     call createAll(work2, work1%nrow, GAM1_dns%ncol)
-    call matmul_gpu(hh, one, GAM1_dns%val, Gr(bl1,bl1)%val, zero, work1%val)
-    call matmul_gpu(hh, one, work1%val, GAM1_dns%val, zero, work2%val)
+    call matmul_gpu(hh, one, GAM1_dns, Gr(bl1,bl1), zero, work1)
+    call matmul_gpu(hh, one, work1, GAM1_dns, zero, work2)
 
     call destroyAll(work1)
 
-    call createAll(work1, work2%nrow, GA%ncol)
-    call matmul_gpu(hh, one, work2%val, GA%val, zero, work1%val)
+    call createAll(work1, work2%nrow, Gr(bl1,bl1)%nrow)
+    call matmul_gpu(hh, one, work2, Gr(bl1,bl1), zero, work1,'dag_2nd')
     call destroyAll(work2)
 
-    call createAll(AA, GA%nrow, GA%ncol)
-    call add_gpu(j,Gr(bl1,bl1)%val,mj,GA%val,AA%val)
-    call destroyAll(GA)
+    call createAll(AA, Gr(bl1,bl1)%ncol, Gr(bl1,bl1)%nrow)
+    call matsum_gpu(hh, j, Gr(bl1,bl1), mj, Gr(bl1,bl1), AA, 'dag_2nd')
 
     call createAll(work2, GAM1_dns%nrow, AA%ncol)
-    call matmul_gpu(hh, one, GAM1_dns%val, AA%val, zero, work2%val)
+    call matmul_gpu(hh, one, GAM1_dns, AA, zero, work2)
     call destroyAll(GAM1_dns)
     call destroyAll(AA)
 
     call createAll(TRS, work1%nrow, work1%ncol)
-    call add_gpu(one,work2%val,mone,work1%val,TRS%val)
-    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
+    call matsum_gpu(hh, one, work2, mone, work1, TRS)
 
-    TUN = abs(real(trace_gpu(TRS%val, tun_mask)))
-    call deleteGPU(tun_mask)
+    call get_tun_mask(ESH, bl1, tun_proj, tun_mask)
+    call trace_gpu(hh, TRS, TUN, tun_mask)
     call log_deallocate(tun_mask)
 
     call destroyAll(TRS)
@@ -826,7 +817,7 @@ contains
     type(CublasHandle) :: hh
     Integer :: ct1, ct2, bl1, bl2, i, nbl
     logical, dimension(:), allocatable :: tun_mask
-    Type(c_DNS) :: work1, work2, GAM1_dns, GAM2_dns, GA, TRS
+    Type(c_DNS) :: work1, work2, GAM1_dns, GAM2_dns, TRS
     Real(sp) :: max
     complex(sp), parameter :: one = (1.0_sp, 0.0_sp)
     complex(sp), parameter :: mone = (-1.0_sp, 0.0_sp)
@@ -869,10 +860,10 @@ contains
              call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
              call createAll(Gr(i,bl1), work1%nrow, Gr(i-1,bl1)%ncol)
              call copyToGPU(ESH(i,i-1))
-             call matmul_gpu(hh, mone, gsmr(i)%val, ESH(i,i-1)%val, zero, work1%val)
+             call matmul_gpu(hh, mone, gsmr(i), ESH(i,i-1), zero, work1)
              call deleteGPU(ESH(i,i-1))
 
-             call matmul_gpu(hh, one, work1%val, Gr(i-1,bl1)%val ,zero, Gr(i,bl1)%val)
+             call matmul_gpu(hh, one, work1, Gr(i-1,bl1) ,zero, Gr(i,bl1))
              call destroyAll(work1)
 
           endif
@@ -885,15 +876,15 @@ contains
     ! Computes the Gamma matrices
     call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
     call createAll(GAM2_dns, SelfEneR(ct2)%nrow, SelfEneR(ct2)%ncol)
-    call spectral_gpu(SelfEneR(ct1)%val,GAM1_dns%val)
-    call spectral_gpu(SelfEneR(ct2)%val,GAM2_dns%val)
+    call spectral_gpu(hh, SelfEneR(ct1), GAM1_dns)
+    call spectral_gpu(hh, SelfEneR(ct2), GAM2_dns)
 
     ! Work to compute transmission matrix (Gamma2 Gr Gamma1 Ga)
     call createAll(work1, Gr(bl2,bl1)%nrow, GAM1_dns%ncol)
-    call matmul_gpu(hh, one, Gr(bl2,bl1)%val, GAM1_dns%val, zero, work1%val)
+    call matmul_gpu(hh, one, Gr(bl2,bl1), GAM1_dns, zero, work1)
 
     call createAll(work2, GAM2_dns%nrow, work1%ncol)
-    call matmul_gpu(hh, one, GAM2_dns%val, work1%val, zero, work2%val)
+    call matmul_gpu(hh, one, GAM2_dns, work1, zero, work2)
 
     call destroyAll(work1)
     call destroyAll(GAM2_dns)
@@ -901,17 +892,12 @@ contains
 
     call createAll(TRS, work2%nrow, Gr(bl2,bl1)%nrow)
 
-    call createAll(GA, Gr(bl2,bl1)%ncol, Gr(bl2,bl1)%nrow)
-    call dagger_gpu(Gr(bl2,bl1)%val,GA%val)
-    call matmul_gpu(hh, one, work2%val, GA%val, zero, TRS%val)
+    call matmul_gpu(hh, one, work2, Gr(bl2,bl1), zero, TRS, 'dag_2nd')
     call destroyAll(work2)
-    call destroyAll(GA)
     if (bl2.gt.bl1+1) call destroyAll(Gr(bl2,bl1))
 
     call get_tun_mask(ESH, bl2, tun_proj, tun_mask)
-    TUN = abs(real(trace_gpu(TRS%val, tun_mask)))
-    
-    call deleteGPU(tun_mask) 
+    call trace_gpu(hh, TRS, TUN, tun_mask)
     call log_deallocate(tun_mask)
 
     call destroyAll(TRS)
@@ -933,8 +919,8 @@ contains
     type(CublasHandle) :: hh
     Integer :: ct1, ct2, bl1, bl2, i, nbl
     logical, dimension(:), allocatable :: tun_mask
-    Type(z_DNS) :: work1, work2, GAM1_dns, GAM2_dns, GA, TRS
-    real(dp) :: max, summ
+    Type(z_DNS) :: work1, work2, GAM1_dns, GAM2_dns, TRS
+    real(dp) :: max
     complex(dp), parameter :: one = (1.0_dp, 0.0_dp)
     complex(dp), parameter :: mone = (-1.0_dp, 0.0_dp)
     complex(dp), parameter :: zero = (0.0_dp, 0.0_dp)
@@ -976,10 +962,10 @@ contains
              call createAll(work1, gsmr(i)%nrow, ESH(i,i-1)%ncol)
              call createAll(Gr(i,bl1), work1%nrow, Gr(i-1,bl1)%ncol)
              call copyToGPU(ESH(i,i-1))
-             call matmul_gpu(hh, mone, gsmr(i)%val, ESH(i,i-1)%val, zero, work1%val)
+             call matmul_gpu(hh, mone, gsmr(i), ESH(i,i-1), zero, work1)
              call deleteGPU(ESH(i,i-1))
 
-             call matmul_gpu(hh, one, work1%val, Gr(i-1,bl1)%val ,zero, Gr(i,bl1)%val)
+             call matmul_gpu(hh, one, work1, Gr(i-1,bl1) ,zero, Gr(i,bl1))
              call destroyAll(work1)
 
           endif
@@ -992,15 +978,15 @@ contains
     ! Computes the Gamma matrices
     call createAll(GAM1_dns, SelfEneR(ct1)%nrow, SelfEneR(ct1)%ncol)
     call createAll(GAM2_dns, SelfEneR(ct2)%nrow, SelfEneR(ct2)%ncol)
-    call spectral_gpu(SelfEneR(ct1)%val,GAM1_dns%val)
-    call spectral_gpu(SelfEneR(ct2)%val,GAM2_dns%val)
+    call spectral_gpu(hh, SelfEneR(ct1), GAM1_dns)
+    call spectral_gpu(hh, SelfEneR(ct2), GAM2_dns)
 
     ! Work to compute transmission matrix (Gamma2 Gr Gamma1 Ga)
     call createAll(work1, Gr(bl2,bl1)%nrow, GAM1_dns%ncol)
-    call matmul_gpu(hh, one, Gr(bl2,bl1)%val, GAM1_dns%val, zero, work1%val)
+    call matmul_gpu(hh, one, Gr(bl2,bl1), GAM1_dns, zero, work1)
 
     call createAll(work2, GAM2_dns%nrow, work1%ncol)
-    call matmul_gpu(hh, one, GAM2_dns%val, work1%val, zero, work2%val)
+    call matmul_gpu(hh, one, GAM2_dns, work1, zero, work2)
 
     call destroyAll(work1)
     call destroyAll(GAM2_dns)
@@ -1008,17 +994,12 @@ contains
 
     call createAll(TRS, work2%nrow, Gr(bl2,bl1)%nrow)
 
-    call createAll(GA, Gr(bl2,bl1)%ncol, Gr(bl2,bl1)%nrow)
-    call dagger_gpu(Gr(bl2,bl1)%val,GA%val)
-    call matmul_gpu(hh, one, work2%val, GA%val, zero, TRS%val)
+    call matmul_gpu(hh, one, work2, Gr(bl2,bl1), zero, TRS, 'dag_2nd')
     call destroyAll(work2)
-    call destroyAll(GA)
     if (bl2.gt.bl1+1) call destroyAll(Gr(bl2,bl1))
 
     call get_tun_mask(ESH, bl2, tun_proj, tun_mask)
-    TUN = abs(real(trace_gpu(TRS%val, tun_mask)))
-    
-    call deleteGPU(tun_mask) 
+    call trace_gpu(hh, TRS, TUN, tun_mask)
     call log_deallocate(tun_mask)
 
     call destroyAll(TRS)
@@ -1042,27 +1023,21 @@ contains
        ! set the start/end indices of nbl
        ! NB: istart has offset -1 to avoid +/-1 operations
        istart = 0
-       !$acc data present(ESH) 
        do ii = 1, nbl-1
           istart = istart + ESH(ii,ii)%nrow
        end do
-       !$acc end data 
        iend = istart + ESH(nbl,nbl)%nrow + 1  
 
        ! select the indices in tun_proj 
        
-       !$acc kernels copyin(tun_proj, tun_mask)   
        do ii = 1, size(tun_proj%indexes)
           ind = tun_proj%indexes(ii)
           if (ind > istart .and. ind < iend) then
              tun_mask(ind - istart) = .true. 
           end if
        end do
-       !$acc end kernels
-       !$acc exit data delete(tun_proj)
     else
        tun_mask = .true.
-       !$acc enter data copyin(tun_mask)
     end if
 
   end subroutine get_tun_mask_sp
@@ -1083,27 +1058,21 @@ contains
        ! set the start/end indices of nbl
        ! NB: istart has offset -1 to avoid +/-1 operations
        istart = 0
-       !$acc data present(ESH) 
        do ii = 1, nbl-1
           istart = istart + ESH(ii,ii)%nrow
        end do
        iend = istart + ESH(nbl,nbl)%nrow + 1  
-       !$acc end data 
 
        ! select the indices in tun_proj
 
-       !$acc kernels copyin(tun_proj, tun_mask)   
        do ii = 1, size(tun_proj%indexes)
           ind = tun_proj%indexes(ii)
           if (ind > istart .and. ind < iend) then
              tun_mask(ind - istart) = .true. 
           end if
        end do
-       !$acc end kernels
-       !$acc exit data delete(tun_proj)
     else
        tun_mask = .true.
-       !$acc enter data copyin(tun_mask)
     end if
 
   end subroutine get_tun_mask_dp
