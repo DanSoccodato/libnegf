@@ -517,7 +517,7 @@ CONTAINS
     if (present(k_index)) then
       label%kpoint = k_index
     end if
-    if (present(k_index)) then
+    if (present(en_index)) then
       label%energy_point = en_index
     end if
     if (present(spin)) then
@@ -574,7 +574,7 @@ CONTAINS
     if (present(k_index)) then
       label%kpoint = k_index
     end if
-    if (present(k_index)) then
+    if (present(en_index)) then
       label%energy_point = en_index
     end if
     if (present(spin)) then
