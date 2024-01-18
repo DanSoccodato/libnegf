@@ -39,7 +39,7 @@ set(sources-fpp
   sparskit/skit_module.F90
   sparskit/skit_unary.F90)
 
-if(WITH_INELASTIC)
+if(WITH_HILBERT)
   list(APPEND sources-fpp transform.F90)
 endif()
 
