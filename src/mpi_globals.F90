@@ -62,7 +62,7 @@ module mpi_globals
     ! For E it is used to compute where E +/- wq are located
     ! For K it is used to compute where another q is placed
     !
-    subroutine negf_cart_init(inComm, nk, cartComm, energyComm, kComm, out_cartComm, out_kComm)
+    subroutine negf_cart_init(inComm, nk, cartComm, energyComm, kComm, bareCartComm, barekComm)
       !> Input communicator
       type(mpifx_comm), intent(in) :: inComm
       !> Number of processors for k
@@ -75,7 +75,7 @@ module mpi_globals
       type(mpifx_comm), intent(out) :: kComm
 
       !> Output communicators of type int for TiberCAD
-      integer, intent(out), optional :: out_cartComm, out_kComm
+      integer, intent(out), optional :: bareCartComm, barekComm
 
       integer :: outComm
       integer :: ndims = 2
@@ -95,9 +95,10 @@ module mpi_globals
       periods(1) = .true.
 
       call MPI_CART_CREATE(inComm%id, ndims, dims, periods, reorder, out_cartComm, mpierr)
-      call cartComm%init(out_cartComm, mpierr)
+      call cartComm%init(outComm, mpierr)
       ! Global master id=0 node as writing node
       id0 = (cartComm%rank == 0)
+      if (present(bareCartComm)) bareCartComm = outComm
 
       ! Extract sub-communicators
       remain_dims(:) = [.false., .true.]
@@ -108,7 +109,8 @@ module mpi_globals
 
       remain_dims(:) = [.true., .false.]
       call MPI_CART_SUB(cartComm%id, remain_dims, out_kComm, mpierr)
-      call kComm%init(out_kComm, mpierr)
+      call kComm%init(outComm, mpierr)
+      if (present(barekComm)) barekComm = outComm
 
     end subroutine negf_cart_init
 
