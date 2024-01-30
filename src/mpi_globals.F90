@@ -94,7 +94,7 @@ module mpi_globals
       dims(1)=nk; dims(2)=nE
       periods(1) = .true.
 
-      call MPI_CART_CREATE(inComm%id, ndims, dims, periods, reorder, out_cartComm, mpierr)
+      call MPI_CART_CREATE(inComm%id, ndims, dims, periods, reorder, outComm, mpierr)
       call cartComm%init(outComm, mpierr)
       ! Global master id=0 node as writing node
       id0 = (cartComm%rank == 0)
@@ -108,7 +108,7 @@ module mpi_globals
       numprocs = energyComm%size
 
       remain_dims(:) = [.true., .false.]
-      call MPI_CART_SUB(cartComm%id, remain_dims, out_kComm, mpierr)
+      call MPI_CART_SUB(cartComm%id, remain_dims, outComm, mpierr)
       call kComm%init(outComm, mpierr)
       if (present(barekComm)) barekComm = outComm
 
