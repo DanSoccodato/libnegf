@@ -367,7 +367,7 @@ end subroutine negf_get_params
 
 !!* Passing Hamiltonian from memory
 !!* @param  handler  Contains the handler for the new instance on return
-subroutine negf_set_h(handler, nrow, A, JA, IA) bind(C)
+subroutine negf_set_h(handler, nrow, A, JA, IA, iK) bind(C)
   use iso_c_binding, only : c_int, c_double_complex  ! if:mod:use
   use libnegfAPICommon  ! if:mod:use
   use libnegf           ! if:mod:use
@@ -378,14 +378,33 @@ subroutine negf_set_h(handler, nrow, A, JA, IA) bind(C)
   complex(c_double_complex), intent(in) :: A(*) ! if:var:in
   integer(c_int), intent(in) :: JA(*)    ! if:var:in
   integer(c_int), intent(in) :: IA(*)    ! if:var:in
+  integer(c_int), intent(in), value :: iK     ! if:var:in
 
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
-  call create_HS(LIB%pNEGF, 1) ! Hack for now, needs to be re-thought for including phonon inel interactions
+  !call create_HS(LIB%pNEGF, 1) ! Hack for now, needs to be re-thought for including phonon inel interactions
                                ! Probably needs to be initialized with its own API
-  call set_H(LIB%pNEGF,nrow, A, JA, IA)
+  call set_H(LIB%pNEGF,nrow, A, JA, IA, iK)
 end subroutine negf_set_h
+
+!!* Passing number of Hamiltonians to allocate container
+!!* @param  handler  Contains the handler for the new instance on return
+subroutine negf_create_hs(handler, nHk) bind(C)
+  use iso_c_binding, only : c_int, c_double_complex  ! if:mod:use
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf           ! if:mod:use
+  use ln_precision      ! if:mod:use
+  implicit none
+  integer :: handler(DAC_handlerSize)  ! if:var:in
+  integer(c_int), intent(in), value :: nHk     ! if:var:in
+
+  type(NEGFpointers) :: LIB
+
+  LIB = transfer(handler, LIB)
+  call create_HS(LIB%pNEGF, nHk) 
+
+end subroutine negf_create_hs
 
 !!* Passing fortran style mpi communicator.
 !!* @param  handler The handler to this negf instance.
@@ -426,7 +445,7 @@ end subroutine negf_cartesian_init
 
 !!* Passing Overlap from memory
 !!* @param  handler  Contains the handler for the new instance on return
-subroutine negf_set_s(handler, nrow, A, JA, IA) bind(C)
+subroutine negf_set_s(handler, nrow, A, JA, IA, iK) bind(C)
   use iso_c_binding, only : c_int, c_double_complex  ! if:mod:use
   use libnegfAPICommon  ! if:mod:use
   use libnegf           ! if:mod:use
@@ -437,11 +456,13 @@ subroutine negf_set_s(handler, nrow, A, JA, IA) bind(C)
   complex(c_double_complex), intent(in) :: A(*) ! if:var:in
   integer(c_int), intent(in) :: JA(*)    ! if:var:in
   integer(c_int), intent(in) :: IA(*)    ! if:var:in
+  integer(c_int), intent(in), value :: iK     ! if:var:in
+
 
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
-  call set_S(LIB%pNEGF,nrow, A, JA, IA)
+  call set_S(LIB%pNEGF,nrow, A, JA, IA, iK)
 end subroutine negf_set_s
 
 !> Same as negf_set_s, but pass separately real
@@ -502,7 +523,7 @@ end subroutine negf_set_h_cp
 
 !!* Passing Overlap from memory
 !!* @param  handler  Contains the handler for the new instance on return
-subroutine negf_set_s_id(handler, nrow) bind(C)
+subroutine negf_set_s_id(handler, nrow, iK) bind(C)
   use iso_c_binding, only : c_int
   use libnegfAPICommon  ! if:mod:use
   use libnegf           ! if:mod:use
@@ -510,12 +531,13 @@ subroutine negf_set_s_id(handler, nrow) bind(C)
   implicit none
   integer :: handler(DAC_handlerSize)  ! if:var:in
   integer(c_int), intent(in), value:: nrow     ! if:var:in
+  integer(c_int), intent(in), value:: iK     ! if:var:in
 
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
 
-  call set_S_id(LIB%pNEGF,nrow)
+  call set_S_id(LIB%pNEGF,nrow, iK)
 
 end subroutine negf_set_s_id
 
@@ -740,7 +762,7 @@ subroutine negf_density_quasi_equilibrium(handler,ndofs,density,particle, Ec, Ev
 
   type(NEGFpointers) :: LIB
 
-  LIB = transfer(handler, LIB) 
+  LIB = transfer(handler, LIB)   
   call compute_density_quasiEq(LIB%pNEGF, density, particle, Ec, Ev, mu_n, mu_p)
 
 end subroutine negf_density_quasi_equilibrium
@@ -1051,6 +1073,82 @@ subroutine negf_set_kpoint(handler, kpoint) bind(C)
 
 end subroutine negf_set_kpoint
 
+!>
+!!  Set the kpoints
+!!  @param
+!!*        handler:  handler Number for the LIBNEGF instance
+!!*        kpoints: the global kpoints as a matrix 3xNk
+!!         dims: the dimension of a single kpoint, should always be 3
+!!         nK: the total number of kpoints
+!!         kweights: the values of the weights
+!!         local_k_indices: processor-dependent integers pointing to the local kpoints
+!!         n_local: the number of kpoints contained in `local_k_indices`
+!!         eqv_points: global matrix that contains the kpoints needed to reconstruct the Brillouin Zone, starting from
+!!                     the irreducible wedge (IW)
+!!         m_eq: number of eqv_points, needed to reconstruct the matrix from the 1D array passed from C++
+!!         equiv_mult: the array containing, for each kpoint in `kpoints`, the multiplicity of equivalent points. 
+!!                     Necessary to unpack `eqv_points` and assign them to the corrispective IW kpoint
+!!  
+subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indices, n_local, eqv_points, m_eq, equiv_mult) bind(C)
+  use iso_c_binding, only : c_int, c_double ! if:mod:use
+  use libnegfAPICommon    ! if:mod:use
+  use libnegf             ! if:mod:use
+  use ln_precision        ! if:mod:use
+  implicit none
+  integer :: handler(DAC_handlerSize)               !if:var:in
+  real(c_double), intent(in) :: kpoints(dims,nK)    !if:var:in
+  integer(c_int), intent(in), value :: dims         !if:var:in
+  integer(c_int), intent(in), value :: nK           !if:var:in
+  real(c_double), intent(in) :: kweights(nK)        !if:var:in
+  integer(c_int), intent(in) :: local_k_indices(n_local) !if:var:in
+  integer(c_int), intent(in), value :: n_local           !if:var:in
+  real(c_double), intent(in) :: eqv_points(dims,m_eq)    !if:var:in
+  integer(c_int), intent(in), value :: m_eq              !if:var:in
+  integer(c_int), intent(in) :: equiv_mult(nK)           !if:var:in
+
+
+
+  type(NEGFpointers) :: LIB
+
+  integer :: i, j, n_eq, begin, last
+
+  ! size_x = nK
+  ! size_y = 3
+
+  LIB = transfer(handler, LIB)
+  
+  print*, "DEBUG: kPoints in libnegf:"
+  
+  print*, "i=",1,"kpoint(i)=", kpoints(:,1), "w=", kweights(1)
+  n_eq = equiv_mult(1)
+  begin = 1
+  last = n_eq
+  print*, "begin: ", begin, "last: ", last
+  print*, n_eq, "equivalent points: "
+  do j=begin, last
+    print*, "   ", eqv_points(:, j)
+  end do
+
+  do i=2,nK
+    print*, "i=",i,"kpoint(i)=", kpoints(:,i), "w=", kweights(i)
+    n_eq = equiv_mult(i)
+    begin = last + 1
+    last = begin + n_eq - 1
+    print*, "begin: ", begin, "last: ", last
+    print*, n_eq, "equivalent points: "
+    do j=begin,last
+      print*, "   ", eqv_points(:, j)
+    end do
+  end do
+
+  print*, ""
+  print*, "Local indices:"
+  do i=1,n_local
+    print*, local_k_indices(i)
+  end do 
+    
+end subroutine negf_set_kpoints
+
 
 subroutine negf_set_reference(handler, minmax) bind(C)
   use libnegfAPICommon    ! if:mod:use
@@ -1117,6 +1215,24 @@ subroutine negf_current(handler, current, c_unitsOfH, c_unitsOfJ) bind(C)
   current = current * convertCurrent(unitsH, unitsJ)
 
 end subroutine negf_current
+
+
+subroutine negf_layer_current(handler, ndofs, layer_current) bind(C)
+  use libnegfAPICommon  ! if:mod:use  use negf_param
+  use ln_precision      !if:mod:use
+  use libnegf           ! if:mod:use
+  implicit none
+  integer :: handler(DAC_handlerSize)  ! if:var:in
+  integer :: ndofs                     ! if:var:in
+  real(dp) :: layer_current(ndofs)           ! if:var:in
+
+  type(NEGFpointers) :: LIB
+
+  LIB = transfer(handler, LIB)
+
+  ! call compute_density_efa(LIB%pNEGF, density, particle)
+
+end subroutine negf_layer_current
 
 
 !> Print TNegf container for debug
