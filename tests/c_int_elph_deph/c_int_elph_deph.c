@@ -27,7 +27,7 @@ int main()
   negf_init_session(hand);
   negf_init(hand);
   negf_read_hs(hand, &realmat[0], &imagmat[0], 0);
-  negf_set_s_id(hand, 100);
+  negf_set_s_id(hand, 100, 1);
   negf_init_contacts(hand, 2);
   negf_init_structure(hand, 2, &surfstart[0], &surfend[0], &contend[0], 6, &plend[0], &cblk[0]);
 
