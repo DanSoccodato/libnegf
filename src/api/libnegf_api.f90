@@ -383,9 +383,8 @@ subroutine negf_set_h(handler, nrow, A, JA, IA, iK) bind(C)
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
-  !call create_HS(LIB%pNEGF, 1) ! Hack for now, needs to be re-thought for including phonon inel interactions
-                               ! Probably needs to be initialized with its own API
   call set_H(LIB%pNEGF,nrow, A, JA, IA, iK)
+
 end subroutine negf_set_h
 
 !!* Passing number of Hamiltonians to allocate container
@@ -1106,48 +1105,47 @@ subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indice
   integer(c_int), intent(in), value :: m_eq              !if:var:in
   integer(c_int), intent(in) :: equiv_mult(nK)           !if:var:in
 
+  type(NEGFpointers) :: LIB
 
+  LIB = transfer(handler, LIB)
+
+  call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0, eqv_points, equiv_mult)
+
+end subroutine negf_set_kpoints
+
+
+!>
+!!  Set atomistic basis
+!!  @param
+!!*        handler:  handler Number for the LIBNEGF instance
+!!*        coords: the coordinates of each atom in the device
+!!         n_atoms: the total number of atoms in the device
+!!         dims: the dimension of a single point, should always be 3
+!!         matrix_indices: map from atoms to hamiltonian indices
+!!         lattice_vecs: the three lattice vectors, stored column-wise (e.g. a1 = lattice_vecs(:,1))
+!!         n_vecs: the number of lattice vectors, should always be 3
+!!
+subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, lattice_vecs, n_vecs) bind(C)
+  use iso_c_binding, only : c_int, c_double ! if:mod:use
+  use libnegfAPICommon    ! if:mod:use
+  use libnegf             ! if:mod:use
+  use ln_precision        ! if:mod:use
+  implicit none
+  integer :: handler(DAC_handlerSize)                       !if:var:in
+  real(c_double), intent(in) :: coords(n_atoms,dims)        !if:var:in
+  integer(c_int), intent(in), value :: n_atoms              !if:var:in
+  integer(c_int), intent(in), value :: dims                 !if:var:in
+  integer(c_int), intent(in) :: matrix_indices(n_atoms)     !if:var:in
+  real(c_double), intent(in) :: lattice_vecs(dims,n_vecs)   !if:var:in
+  integer(c_int), intent(in), value :: n_vecs      !if:var:in
 
   type(NEGFpointers) :: LIB
 
-  integer :: i, j, n_eq, begin, last
-
-  ! size_x = nK
-  ! size_y = 3
-
   LIB = transfer(handler, LIB)
-  
-  print*, "DEBUG: kPoints in libnegf:"
-  
-  print*, "i=",1,"kpoint(i)=", kpoints(:,1), "w=", kweights(1)
-  n_eq = equiv_mult(1)
-  begin = 1
-  last = n_eq
-  print*, "begin: ", begin, "last: ", last
-  print*, n_eq, "equivalent points: "
-  do j=begin, last
-    print*, "   ", eqv_points(:, j)
-  end do
 
-  do i=2,nK
-    print*, "i=",i,"kpoint(i)=", kpoints(:,i), "w=", kweights(i)
-    n_eq = equiv_mult(i)
-    begin = last + 1
-    last = begin + n_eq - 1
-    print*, "begin: ", begin, "last: ", last
-    print*, n_eq, "equivalent points: "
-    do j=begin,last
-      print*, "   ", eqv_points(:, j)
-    end do
-  end do
-
-  print*, ""
-  print*, "Local indices:"
-  do i=1,n_local
-    print*, local_k_indices(i)
-  end do 
+  call init_basis(LIB%pNEGF, coords, n_atoms, matrix_indices, lattice_vecs)
     
-end subroutine negf_set_kpoints
+end subroutine negf_init_basis
 
 
 subroutine negf_set_reference(handler, minmax) bind(C)

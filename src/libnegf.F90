@@ -39,6 +39,7 @@ module libnegf
  use system_calls
  use elph, only : interaction_models
  use interactions, only : get_max_wq
+ use elphinel, only: destroy_equivalent_points
 #:if defined("MPI")
  use libmpifx_module, only : mpifx_comm
 #:endif
@@ -725,12 +726,14 @@ contains
   !  local_kindex(:) is a local array storing the local indices
   !  kSamplingType: 0 = Gamma-centered, no inversion
   !                 1 = Shifted in the I quadrant (0..1)x(0..1), no inversion
-  subroutine set_kpoints(negf, kpoints, kweights, local_kindex, kSamplingType)
+  subroutine set_kpoints(negf, kpoints, kweights, local_kindex, kSamplingType, equiv_kpoints, equiv_mult)
     type(Tnegf) :: negf
     real(dp), intent(in) :: kpoints(:,:)
     real(dp), intent(in) :: kweights(:)
     integer, intent(in) :: local_kindex(:)
     integer, intent(in) :: kSamplingType
+    real(dp), intent(in), optional :: equiv_kpoints(:,:)
+    integer, intent(in), optional :: equiv_mult(:)
 
     integer :: ii
     real(dp) :: shift(3)
@@ -738,6 +741,7 @@ contains
     if (size(kpoints,2) /= size(kweights)) then
        STOP 'Error: size of kpoints do not match'
     end if
+
     if (allocated(negf%kpoints)) then
        call log_deallocate(negf%kpoints)
     end if
@@ -777,7 +781,72 @@ contains
         write(*,*) negf%kpoints(:,ii), negf%kweights(ii)
       end do
     end if
+
+    if (present(equiv_kpoints)) then
+      if (.not. present(equiv_mult)) then
+        stop "ERROR: equivalent k-points were passed without multiplicity array equiv_mult"
+      endif
+      call set_equivalent_points(negf, equiv_kpoints, size(kweights), equiv_mult)
+    else
+      if (allocated(negf%equivalent_kpoints)) deallocate(negf%equivalent_kpoints) 
+      allocate(negf%equivalent_kpoints)
+      negf%equivalent_kpoints%present = .false.
+    endif
   end subroutine set_kpoints
+
+  subroutine set_equivalent_points(negf, equiv_kpoints, nkpoints, equiv_mult)
+    type(Tnegf) :: negf
+    real(dp), intent(in) :: equiv_kpoints(:,:)
+    integer, intent(in) :: nkpoints
+    integer, intent(in) :: equiv_mult(:)
+
+    integer :: i, j, n_eq, begin, last
+
+    if (allocated(negf%equivalent_kpoints)) deallocate(negf%equivalent_kpoints)
+    allocate(negf%equivalent_kpoints)
+
+    if (allocated(negf%equivalent_kpoints%EqPoints)) deallocate(negf%equivalent_kpoints%EqPoints)
+    allocate(negf%equivalent_kpoints%EqPoints(nkpoints))
+
+    !Eq. points of the first kpoint must be initialized outside the loop 
+    n_eq = equiv_mult(1)
+    negf%equivalent_kpoints%EqPoints(1)%n_eq = n_eq
+    if (allocated(negf%equivalent_kpoints%EqPoints(1)%points)) then 
+      call log_deallocate(negf%equivalent_kpoints%EqPoints(1)%points)
+    endif
+    call log_allocate(negf%equivalent_kpoints%EqPoints(1)%points, 3, n_eq)
+
+    begin = 1
+    last = n_eq
+    negf%equivalent_kpoints%EqPoints(1)%points(:,:) = equiv_kpoints(:, begin:last)
+
+    ! Now initialize all the remaining kpoints
+    do i = 2, nkpoints
+      n_eq = equiv_mult(i)
+      negf%equivalent_kpoints%EqPoints(i)%n_eq = n_eq
+      if (allocated(negf%equivalent_kpoints%EqPoints(i)%points)) then
+        call log_deallocate(negf%equivalent_kpoints%EqPoints(i)%points)
+      endif
+      call log_allocate(negf%equivalent_kpoints%EqPoints(i)%points, 3, n_eq)
+
+      begin = last + 1
+      last = begin + n_eq - 1
+      negf%equivalent_kpoints%EqPoints(i)%points(:,:) = equiv_kpoints(:, begin:last)
+    enddo
+
+    negf%equivalent_kpoints%present = .true.
+
+    if (id0) then
+      write(*,*) 'Equivalent k-points used in NEGF:'
+      do i = 1, nkpoints
+        write(*,*) "For kpoint: ", negf%kpoints(:, i), ":"
+        do j = 1, negf%equivalent_kpoints%EqPoints(i)%n_eq
+          write(*,*) "   ", negf%equivalent_kpoints%EqPoints(i)%points(:, j)
+        end do
+      end do
+    end if
+
+  end subroutine set_equivalent_points
 
 
   !!-------------------------------------------------------------------
@@ -1412,6 +1481,11 @@ contains
     if (allocated(negf%local_k_index)) then
       call log_deallocate(negf%local_k_index)
     end if
+
+    if (allocated(negf%equivalent_kpoints)) then
+      call destroy_equivalent_points(negf%equivalent_kpoints)
+      deallocate(negf%equivalent_kpoints)
+    endif
 
     call destroy_interactions(negf)
 

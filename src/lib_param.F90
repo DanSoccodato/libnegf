@@ -35,6 +35,7 @@ module lib_param
   use elphds, only : ElPhonDephS, ElPhonDephS_create, ElPhonDephS_init
   use elphinel, only : ElPhonPolarOptical, ElPhonPO_create, ElPhonPO_init
   use elphinel, only : ElPhonNonPolarOptical, ElPhonNonPO_create, ElPhonNonPO_init
+  use elphinel, only : TEqPointsArray
   use scba
   use ln_cache
 #:if defined("MPI")
@@ -231,6 +232,9 @@ module lib_param
     real(dp), allocatable, dimension(:) :: kweights
     ! Array of local k-point indices
     integer, allocatable, dimension(:) :: local_k_index
+
+    ! Information about equivalent kpoints
+    type(TEqPointsArray), allocatable :: equivalent_kpoints
 
     type(mesh) :: emesh           ! energy mesh for adaptive Simpson
     real(dp) :: int_acc           ! adaptive integration accuracy

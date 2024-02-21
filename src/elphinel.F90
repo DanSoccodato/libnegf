@@ -46,6 +46,8 @@ module elphinel
   public :: ElPhonInel, ElPhonPolarOptical, ElPhonNonPolarOptical
   public :: ElPhonPO_create, ElPhonNonPO_create
   public :: ElPhonPO_init, ElPhonNonPO_init
+  public :: TEqPointsArray
+  public :: destroy_equivalent_points
 
   type, abstract, extends(TInelastic) :: ElPhonInel
     private
@@ -65,6 +67,8 @@ module elphinel
     real(dp), allocatable :: kpoint(:,:)
     real(dp), allocatable :: kweight(:)
     integer, allocatable :: local_kindex(:)
+    !> Equivalent Kpoints. For extending the irreducible wedge
+    type(TEqPointsArray), allocatable :: equivalent_kpoints
     !> Energy grid. global num of energy points
     integer :: nE_global
     !> Energy grid. Local num of energy points
@@ -96,6 +100,17 @@ module elphinel
     procedure :: destroy => destroy_elph
 
   end type ElPhonInel
+
+  !> Structure containing information about symmetrically equivalent points, for each kpoint in kpoints
+  type TEqPointsArray
+    type(TEqPoint), dimension(:), allocatable :: EqPoints
+    logical :: present
+  end type TEqPointsArray
+  !> For each kpoint, one set of equivalent points consists of a 3 x n_eq matrix
+  type TEqPoint
+    real(dp), dimension(:,:), allocatable :: points
+    integer :: n_eq
+  end type  TEqPoint
 
   abstract interface
     subroutine abstract_prepare(this)
@@ -287,17 +302,28 @@ contains
   end subroutine ElPhonNonPO_init
   !--------------------------------------------------------------------------
   ! This function should be called before the SCBA loop
-  subroutine set_kpoints(this, kpoints, kweights, kindex)
+  subroutine set_kpoints(this, kpoints, kweights, kindex, equiv_kpoints)
     class(ElPhonInel) :: this
     real(dp), intent(in) :: kpoints(:,:)
     real(dp), intent(in) :: kweights(:)
     integer, intent(in) :: kindex(:)
+    type(TEqPointsArray), intent(in), optional :: equiv_kpoints
 
-    integer :: nCentralAtoms
+    integer :: nCentralAtoms, i
 
     this%kpoint = kpoints
     this%kweight = kweights
     this%local_kindex = kindex
+
+    if (present(equiv_kpoints)) then
+      allocate(this%equivalent_kpoints%EqPoints(size(kweights)))
+      do i = 1, size(kweights)
+        call log_allocate(this%equivalent_kpoints%EqPoints(i)%points, 3, this%equivalent_kpoints%EqPoints(i)%n_eq)
+      enddo
+      this%equivalent_kpoints = equiv_kpoints
+    else
+      this%equivalent_kpoints%present = .false.
+    endif
 
   end subroutine set_kpoints
 
@@ -320,10 +346,12 @@ contains
   subroutine prepare_POKmat(this)
     class(ElPhonPolarOptical) :: this
 
-    integer :: iZ, iQ, iK, fu, nDeltaZ, nCentralAtoms
-    real(dp) :: kq(3), kk(3), QQ(3), Q2, bb, z_mn, Kf
+    integer :: iZ, iQ, eQ, iK, fu, nDeltaZ, nCentralAtoms
+    real(dp) :: kq(3), kk(3), ekp(3), QQ(3), Q2, bb, z_mn, Kf
     real(dp) :: zmin, zmax, recVecs2p(3,3)
-    real(dp), allocatable :: kpoint(:,:)
+    real(dp), allocatable :: kpoint(:,:), ekpoints(:,:)
+
+    type(TEqPoint) :: eqv_points_iQ
 
     ! Compute the matrix Kmat as lookup table
     nCentralAtoms = this%basis%nCentralAtoms
@@ -349,7 +377,7 @@ contains
        kpoint = matmul(recVecs2p, this%kpoint)
     end if
 
-    do iQ = 1, size(this%kweight)
+    iQloop: do iQ = 1, size(this%kweight)
       kq = kpoint(:, iQ)
       do iK = 1, size(this%kweight)
         kk = kpoint(:, iK)
@@ -364,7 +392,34 @@ contains
           this%Kmat(iZ+1,iK,iQ) = this%Ce * this%kweight(iQ) * Kf
         end do
       end do
-    end do
+
+      ! Add contribution of kpoints equivalent to iQ
+      if (this%equivalent_kpoints%present) then
+        !Select the set of points equivalent to iQ
+        eqv_points_iQ = this%equivalent_kpoints%EqPoints(iQ)
+        !Compute the absolute k-points
+        call log_allocate(ekpoints, 3, eqv_points_iQ%n_eq)
+        ekpoints = matmul(recVecs2p, eqv_points_iQ%points)
+
+        do eQ = 1, eqv_points_iQ%n_eq
+          ekp = ekpoints(:,eQ)
+          do iK = 1, size(this%kweight)
+            kk = kpoint(:, iK)
+            QQ = kk - ekp
+            Q2 = dot_product(QQ, QQ)
+            bb = sqrt(this%q0*this%q0 + Q2)
+
+            do iZ = 0, nDeltaZ
+              z_mn = iZ * this%dz
+              Kf = (2.0_dp*Q2 + this%q0*this%q0*(1.0_dp-bb*z_mn))*exp(-bb*z_mn)/ (4.0_dp*bb**3)
+              this%Kmat(iZ+1,iK,iQ) = this%Kmat(iZ+1,iK,iQ) + this%Ce * this%kweight(iQ) * Kf
+            end do
+          end do
+        enddo
+        call log_deallocate(ekpoints)
+      endif
+
+    end do iQloop
 
     !print*,'debug print Kmat'
     !open(newunit=fu, file='Kmat.dat')
@@ -381,10 +436,12 @@ contains
   subroutine prepare_NonPOKmat(this)
     class(ElPhonNonPolarOptical) :: this
 
-    integer :: iZ, iQ, iK, fu, nDeltaZ, nCentralAtoms
-    real(dp) :: kq(3), kk(3), QQ, Q2, kq2, kk2, z_mn, Kf
+    integer :: iZ, iQ, iK, fu, nDeltaZ, nCentralAtoms, eQ
+    real(dp) :: kq(3), kk(3), QQ, Q2, kq2, kk2, z_mn, Kf, ekp(3), ekp2
     real(dp) :: zmin, zmax, recVecs2p(3,3)
-    real(dp), allocatable :: kpoint(:,:)
+    real(dp), allocatable :: kpoint(:,:), ekpoints(:,:)
+
+    type(TEqPoint) :: eqv_points_iQ
 
     ! Compute the matrix Kmat as lookup table
     nCentralAtoms = this%basis%nCentralAtoms
@@ -407,7 +464,7 @@ contains
        kpoint = matmul(recVecs2p, this%kpoint)
     end if
 
-    do iQ = 1, size(this%kweight)
+    iQloop: do iQ = 1, size(this%kweight)
       kq = kpoint(:, iQ)
       kq2 = dot_product(kq,kq)
       if (kq2==0.0_dp) then
@@ -433,7 +490,45 @@ contains
           this%Kmat(iZ+1,iK,iQ) = this%coupling * this%kweight(iQ) * Kf
         end do
       end do
-    end do
+
+      ! Add contribution of kpoints equivalent to iQ
+      if (this%equivalent_kpoints%present) then
+        !Select the set of points equivalent to iQ
+        eqv_points_iQ = this%equivalent_kpoints%EqPoints(iQ)
+        !Compute the absolute k-points
+        call log_allocate(ekpoints, 3, eqv_points_iQ%n_eq)
+        ekpoints = matmul(recVecs2p, eqv_points_iQ%points)
+
+        do eQ = 1, eqv_points_iQ%n_eq
+          ekp = ekpoints(:,eQ)
+          ekp2 = dot_product(ekp,ekp)
+          if (ekp2==0.0_dp) then
+            this%Kmat(:,:,iQ) = this%Kmat(:,:,iQ) + 0.0_dp
+            cycle
+         end if
+
+         do iK = 1, size(this%kweight)
+          kk = kpoint(:, iK)
+          kk2 = dot_product(kk,kk)
+          if (kk2==0.0_dp) then
+             this%Kmat(:,iK,iQ) = this%Kmat(:,iK,iQ) + 0.0_dp
+             cycle
+          end if
+          QQ = dot_product(kk, ekp)
+          Q2 = QQ*QQ
+          do iZ = 0, nDeltaZ
+            z_mn = iZ * this%dz
+            Kf = this%D0*Q2*exp(-sqrt(ekp2)*z_mn)/(2.0_dp*ekp2*kk2)
+
+            this%Kmat(iZ+1,iK,iQ) = this%Kmat(iZ+1,iK,iQ) + this%coupling * this%kweight(iQ) * Kf
+          end do
+         end do
+
+        end do
+        call log_deallocate(ekpoints)
+      endif
+
+    end do iQloop
     !if (any(isNan(this%Kmat))) then
     !  print*,'Kmat= NaN'
     !  stop
@@ -451,6 +546,10 @@ contains
   subroutine destroy_elph(this)
     class(ElPhonInel) :: this
 
+    if (allocated(this%equivalent_kpoints)) then
+      call destroy_equivalent_points(this%equivalent_kpoints)
+      deallocate(this%equivalent_kpoints)
+    endif
     if (allocated(this%kpoint)) deallocate(this%kpoint)
     if (allocated(this%kweight)) deallocate(this%kweight)
     if (allocated(this%local_kindex)) deallocate(this%local_kindex)
@@ -972,7 +1071,7 @@ contains
         call allocate_buff(Np,Mp)
 
         call setup_pointers_Gn()
-        call setup_pointers_Sigma_n(Np,Np)
+        call setup_pointers_Sigma_n(Np,Mp)
         !call check_elements(this%G_n,"G_n")
 
         ! Compute the retarded part
@@ -1080,6 +1179,22 @@ contains
     class(ElPhonInel) :: this
     if (allocated(this%sigma_n)) call this%sigma_n%destroy()
   end subroutine destroy_Sigma_n
+
+  subroutine destroy_equivalent_points(eq_points)
+    type(TEqPointsArray) :: eq_points
+
+    integer :: i, npoints
+
+    npoints = size(eq_points%EqPoints)
+
+    if (eq_points%present) then
+      do i = 1, npoints
+        call log_deallocate(eq_points%EqPoints(i)%points)
+      end do
+    endif
+    deallocate(eq_points%EqPoints)
+
+  end subroutine destroy_equivalent_points
 
   !> Integral over qz of the electron-phonon polar optical couping.
   !

@@ -1791,7 +1791,11 @@ contains
       class is(ElPhonInel)
         deltaE = real(negf%en_grid(2)%Ec - negf%en_grid(1)%Ec)
         call pInter%set_EnGrid(deltaE, size(negf%en_grid), negf%local_en_points)
-        call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index)
+        if (negf%equivalent_kpoints%present) then
+          call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index, negf%equivalent_kpoints)
+        else
+          call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index)
+        endif
         call pInter%prepare()
       end select
       it => it%next
