@@ -48,7 +48,7 @@ int main()
   {
     coupling[i] = 0.05;
   }
-  negf_set_elph_dephasing(hand, &coupling[0], 60, &foo[0], 1, 10, 1);
+  negf_set_elph_dephasing(hand, &coupling[0], 60, 10);
 
   // Calculate the current.
   negf_solve_landauer(hand);

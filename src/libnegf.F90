@@ -666,18 +666,20 @@ contains
 
 
   !> Initialize basis
-  subroutine init_basis(negf, coords, nCentral, matrixIndices, latticeVects)
+  subroutine init_basis(negf, coords, nCentral, matrixIndices, latticeVects, transportDirection)
     type(Tnegf) :: negf
     real(dp), intent(in) :: coords(:,:)
     integer, intent(in) :: nCentral
     integer, intent(in) :: matrixIndices(:)
     real(dp), intent(in), optional :: latticeVects(:,:)
+    integer, intent(in), optional :: transportDirection
 
     if (present(latticeVects)) then
        call create_TBasis(negf%basis, coords, nCentral, lattVecs=latticeVects, &
-             & basisToMatrix=matrixIndices)
+             & basisToMatrix=matrixIndices, transportDirection=transportDirection)
     else
-       call create_TBasis(negf%basis, coords, nCentral, basisToMatrix=matrixIndices)
+       call create_TBasis(negf%basis, coords, nCentral, basisToMatrix=matrixIndices, &
+             & transportDirection=transportDirection)
     end if
 
   end subroutine init_basis

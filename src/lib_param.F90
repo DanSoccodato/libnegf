@@ -333,7 +333,7 @@ contains
     type(TInteractionNode), pointer :: node
 
     call negf%interactList%add(node)
-    call elphondephd_create(node%inter)
+    call elphondephb_create(node%inter)
     select type(pInter => node%inter)
     type is(ElPhonDephB)
       call elphondephb_init(pInter, negf%str, coupling, orbsperatom, niter)
@@ -353,7 +353,7 @@ contains
 
     type(TInteractionNode), pointer :: node
     call negf%interactList%add(node)
-    call elphondephd_create(node%inter)
+    call elphondephs_create(node%inter)
     select type(pInter => node%inter)
     type is(ElPhonDephS)
       call elphondephs_init(pInter, negf%str, coupling, orbsperatom, negf%S, niter)

@@ -351,13 +351,15 @@ contains
     real(dp) :: zmin, zmax, recVecs2p(3,3)
     real(dp), allocatable :: kpoint(:,:), ekpoints(:,:)
 
+    integer :: transDir
     type(TEqPoint) :: eqv_points_iQ
 
     ! Compute the matrix Kmat as lookup table
     nCentralAtoms = this%basis%nCentralAtoms
 
-    zmin = minval(this%basis%x(3,1:nCentralAtoms))
-    zmax = maxval(this%basis%x(3,1:nCentralAtoms))
+    transDir = this%basis%transportDirection
+    zmin = minval(this%basis%x(transDir,1:nCentralAtoms))
+    zmax = maxval(this%basis%x(transDir,1:nCentralAtoms))
 
     nDeltaZ = nint(zmax - zmin)/this%dz
     call log_allocate(this%Kmat, nDeltaZ+1, size(this%kweight), size(this%kweight))
@@ -441,13 +443,15 @@ contains
     real(dp) :: zmin, zmax, recVecs2p(3,3)
     real(dp), allocatable :: kpoint(:,:), ekpoints(:,:)
 
+    integer :: transDir
     type(TEqPoint) :: eqv_points_iQ
 
     ! Compute the matrix Kmat as lookup table
     nCentralAtoms = this%basis%nCentralAtoms
 
-    zmin = minval(this%basis%x(3,1:nCentralAtoms))
-    zmax = maxval(this%basis%x(3,1:nCentralAtoms))
+    transDir = this%basis%transportDirection
+    zmin = minval(this%basis%x(transDir,1:nCentralAtoms))
+    zmax = maxval(this%basis%x(transDir,1:nCentralAtoms))
 
     nDeltaZ = nint(zmax - zmin)/this%dz
     call log_allocate(this%Kmat, nDeltaZ+1, size(this%kweight), size(this%kweight))

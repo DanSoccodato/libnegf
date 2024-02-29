@@ -1124,8 +1124,9 @@ end subroutine negf_set_kpoints
 !!         matrix_indices: map from atoms to hamiltonian indices
 !!         lattice_vecs: the three lattice vectors, stored column-wise (e.g. a1 = lattice_vecs(:,1))
 !!         n_vecs: the number of lattice vectors, should always be 3
+!!         trans_dir: integer encoding the transport direction
 !!
-subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, lattice_vecs, n_vecs) bind(C)
+subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, lattice_vecs, n_vecs, trans_dir) bind(C)
   use iso_c_binding, only : c_int, c_double ! if:mod:use
   use libnegfAPICommon    ! if:mod:use
   use libnegf             ! if:mod:use
@@ -1138,12 +1139,14 @@ subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, latti
   integer(c_int), intent(in) :: matrix_indices(n_atoms)     !if:var:in
   real(c_double), intent(in) :: lattice_vecs(dims,n_vecs)   !if:var:in
   integer(c_int), intent(in), value :: n_vecs      !if:var:in
+  integer(c_int), intent(in), value :: trans_dir   !if:var:in
 
   type(NEGFpointers) :: LIB
+  integer :: i
 
   LIB = transfer(handler, LIB)
 
-  call init_basis(LIB%pNEGF, coords, n_atoms, matrix_indices, lattice_vecs)
+  call init_basis(LIB%pNEGF, coords, n_atoms, matrix_indices, lattice_vecs, trans_dir)
     
 end subroutine negf_init_basis
 
@@ -1248,15 +1251,8 @@ subroutine negf_print_tnegf(handler) bind(c)
 
 end subroutine negf_print_tnegf
 
-!!> Set electron-phonon dephasing model.
-!! @param [in] handler: handler Number for the LIBNEGF instance
-!! @param [in] coupling(norbitals): array with coupling strength
-!! @param [in] coupling_size: the size of the coupling array
-!! @param [in] orbsperatom(natoms): array with the number of orbital per atoms. Ignored for model=1
-!! @param [in] orbspreatom_size: the size of orbsperatom
-!! @param [in] niter: the number of SCBA iterations.
-!! @param [in] model: an integer identifying the model (1: fully diagona, 2: block diagonal, 3: overlap mask)
-subroutine negf_set_elph_dephasing(handler, coupling, coupling_size, orbsperatom, orbsperatom_size, niter, model) bind(c)
+
+subroutine negf_set_elph_dephasing(handler, coupling, coupling_size, scba_niter) bind(c)
   use iso_c_binding, only : c_int, c_double ! if:mod:use
   use libnegfAPICommon  ! if:mod:use
   use libnegf   ! if:mod:use
@@ -1264,31 +1260,211 @@ subroutine negf_set_elph_dephasing(handler, coupling, coupling_size, orbsperatom
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)  ! if:var:in
-  real(c_double), intent(in) :: coupling(*)  ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)  ! if:var:in
   integer(c_int), intent(in), value :: coupling_size ! if:var:in
-  integer(c_int), intent(in) :: orbsperatom(*)  ! if:var:in
-  integer(c_int), intent(in), value :: orbsperatom_size ! if:var:in
-  integer(c_int), intent(in), value :: niter ! if:var:in
-  integer(c_int), intent(in), value :: model  ! if:var:in
+  integer(c_int), intent(in), value :: scba_niter ! if:var:in
 
   type(NEGFpointers) :: LIB
-  real(dp), allocatable :: coupling_tmp(:)
-  integer, allocatable :: orbsperatom_tmp(:)
+  real(dp), allocatable :: coupling_tmp(:)  ! We define another array because it must be allocatable in the called subroutine
+
+  LIB = transfer(handler, LIB)
+  allocate(coupling_tmp(coupling_size))
+  coupling_tmp(:) = coupling(1:coupling_size)
+
+  ! print*, "DEBUG: diagonal dephasing"
+  ! print*, "Coupling: ", coupling_tmp
+  ! print*, "max_scba_iterations: ", scba_niter
+  ! print*, ""
+
+  call set_elph_dephasing(LIB%pNEGF, coupling_tmp, scba_niter)
+
+end subroutine negf_set_elph_dephasing
+
+
+subroutine negf_set_elph_block_dephasing(handler, coupling, coupling_size, orbsperatm, orbsperatm_size, scba_niter)&
+  & bind(c)
+  use iso_c_binding, only : c_int, c_double ! if:mod:use
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf   ! if:mod:use
+  use ln_precision      ! if:mod:use
+  use lib_param      ! if:mod:use
+  implicit none
+  integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
+  integer(c_int), intent(in), value :: coupling_size          ! if:var:in
+  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
+  integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in
+  integer(c_int), intent(in), value :: scba_niter             ! if:var:in
+
+  type(NEGFpointers) :: LIB
+  real(dp), allocatable :: coupling_tmp(:)  ! We define another array because it must be allocatable in the called subroutine
+  integer, allocatable :: orbsperatm_tmp(:)
+
+  LIB = transfer(handler, LIB)
+  allocate(coupling_tmp(coupling_size))
+  allocate(orbsperatm_tmp(orbsperatm_size))
+  coupling_tmp(:) = coupling(1:coupling_size)
+  orbsperatm_tmp(:) = orbsperatm(1:orbsperatm_size)
+
+  ! print*, "DEBUG: diagonal block dephasing"
+  ! print*, "Coupling: ", coupling_tmp
+  ! print*, "orbsperatom", orbsperatm
+  ! print*, "max_scba_iterations: ", scba_niter
+  ! print*, ""
+
+  call set_elph_block_dephasing(LIB%pNEGF, coupling_tmp, orbsperatm_tmp, scba_niter)
+
+end subroutine negf_set_elph_block_dephasing
+
+
+subroutine negf_set_elph_s_dephasing(handler, coupling, coupling_size, orbsperatm, orbsperatm_size, scba_niter)&
+  & bind(c)
+  use iso_c_binding, only : c_int, c_double ! if:mod:use
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf   ! if:mod:use
+  use ln_precision      ! if:mod:use
+  use lib_param      ! if:mod:use
+  implicit none
+  integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
+  integer(c_int), intent(in), value :: coupling_size          ! if:var:in
+  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
+  integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in
+  integer(c_int), intent(in), value :: scba_niter             ! if:var:in
+
+  type(NEGFpointers) :: LIB
+  real(dp), allocatable :: coupling_tmp(:)  ! We define another array because it must be allocatable in the called subroutine
+  integer, allocatable :: orbsperatm_tmp(:)
+
+  LIB = transfer(handler, LIB)
+  allocate(coupling_tmp(coupling_size))
+  allocate(orbsperatm_tmp(orbsperatm_size))
+  coupling_tmp(:) = coupling(1:coupling_size)
+  orbsperatm_tmp(:) = orbsperatm(1:orbsperatm_size)
+
+  ! print*, "DEBUG: S dephasing"
+  ! print*, "Coupling: ", coupling_tmp
+  ! print*, "orbsperatom", orbsperatm
+  ! print*, "max_scba_iterations: ", scba_niter
+  ! print*, ""
+
+  call set_elph_s_dephasing(LIB%pNEGF, coupling_tmp, orbsperatm_tmp, scba_niter)
+
+end subroutine negf_set_elph_s_dephasing
+
+
+subroutine negf_set_elph_polaroptical(handler, coup, coup_size, wq, kbT, deltaz, eps_r, eps_inf, q0, cell_area, scba_niter, trid)&
+  & bind(c)
+  use iso_c_binding, only : c_int, c_double, c_bool ! if:mod:use
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf   ! if:mod:use
+  use ln_precision      ! if:mod:use
+  use lib_param      ! if:mod:use
+  implicit none
+  integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
+  real(c_double), intent(in) :: coup(coup_size)       ! if:var:in
+  integer(c_int), intent(in), value :: coup_size          ! if:var:in
+  real(c_double), intent(in), value :: wq                     ! if:var:in
+  real(c_double), intent(in), value :: kbT                    ! if:var:in
+  real(c_double), intent(in), value :: deltaz                 ! if:var:in
+  real(c_double), intent(in), value :: eps_r                  ! if:var:in
+  real(c_double), intent(in), value :: eps_inf                ! if:var:in
+  real(c_double), intent(in), value :: q0                     ! if:var:in
+  real(c_double), intent(in), value :: cell_area              ! if:var:in
+  integer(c_int), intent(in), value :: scba_niter             ! if:var:in
+  logical(c_bool), intent(in) :: trid                         ! if:var:in
+
+  type(NEGFpointers) :: LIB
+  real(dp), allocatable :: coupling_tmp(:)  ! We define another array because it must be allocatable in the called subroutine
+  logical :: trid_tmp  ! C++ passes logical(1) but we need logical(4)
+
+  LIB = transfer(handler, LIB)
+  allocate(coupling_tmp(coup_size))
+  coupling_tmp(:) = coup(1:coup_size)
+  trid_tmp = logical(trid)
+
+  ! print*, "DEBUG: Polar optical"
+  ! print*, "Coupling: ", coupling_tmp
+  ! print*, "max_scba_iterations: ", scba_niter
+  ! print*, "frequency: ", wq
+  ! print*, "eps_r:", eps_r
+  ! print*, "eps_inf: ", eps_inf
+  ! print*, "q0: ", q0
+  ! print*, "cell area: ", cell_area
+  ! print*, "deltaz: ", deltaz
+  ! print*, "kbt: ", kbt
+  ! print*, "tridiagonal: ", trid_tmp
+  ! print*, ""
+
+  call set_elph_polaroptical(LIB%pNEGF, coupling_tmp, wq, kbT, deltaz, eps_r, eps_inf, q0, cell_area, scba_niter, trid_tmp)
+
+end subroutine negf_set_elph_polaroptical
+
+
+subroutine negf_set_elph_nonpolaroptical(handler, coupling, coup_size, wq, kbT, deltaz, D0, cell_area, scba_niter, trid) bind(c)
+  use iso_c_binding, only : c_int, c_double, c_bool ! if:mod:use
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf   ! if:mod:use
+  use ln_precision      ! if:mod:use
+  use lib_param      ! if:mod:use
+  implicit none
+  integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
+  real(c_double), intent(in) :: coupling(coup_size)       ! if:var:in
+  integer(c_int), intent(in), value :: coup_size          ! if:var:in
+  real(c_double), intent(in), value :: wq                     ! if:var:in
+  real(c_double), intent(in), value :: kbT                    ! if:var:in
+  real(c_double), intent(in), value :: deltaz                 ! if:var:in
+  real(c_double), intent(in), value :: D0                     ! if:var:in
+  real(c_double), intent(in), value :: cell_area              ! if:var:in
+  integer(c_int), intent(in), value :: scba_niter             ! if:var:in
+  logical(c_bool), intent(in) :: trid                         ! if:var:in
+
+  type(NEGFpointers) :: LIB
+  real(dp), allocatable :: coupling_tmp(:)  ! We define another array because it must be allocatable in the called subroutine
+  logical :: trid_tmp  ! C++ passes logical(1) but we need logical(4)
+
+  LIB = transfer(handler, LIB)
+  allocate(coupling_tmp(coup_size))
+  coupling_tmp(:) = coupling(1:coup_size)
+  trid_tmp = logical(trid)
+
+  ! print*, "DEBUG: Non-polar optical"
+  ! print*, "Coupling: ", coupling_tmp
+  ! print*, "max_scba_iterations: ", scba_niter
+  ! print*, "frequency: ", wq
+  ! print*, "q0: ", D0
+  ! print*, "cell area: ", cell_area
+  ! print*, "deltaz: ", deltaz
+  ! print*, "kbt: ", kbt
+  ! print*, "tridiagonal: ", trid_tmp
+  ! print*, ""
+
+  call set_elph_nonpolaroptical(LIB%pNEGF, coupling_tmp, wq, kbT, deltaz, D0, cell_area, scba_niter, trid_tmp)
+
+end subroutine negf_set_elph_nonpolaroptical
+
+
+subroutine negf_set_scba_tolerances(handler, elastic_tol, inelastic_tol) bind(c)
+  use iso_c_binding, only : c_double, c_int ! if:mod:use
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf   ! if:mod:use
+  use ln_precision      ! if:mod:use
+  use lib_param      ! if:mod:use
+  implicit none
+  integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
+  real(c_double), intent(in), value :: elastic_tol            ! if:var:in
+  real(c_double), intent(in), value :: inelastic_tol          ! if:var:in
+
+  type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
 
-  allocate(coupling_tmp(coupling_size))
-  coupling_tmp(:) = coupling(1:coupling_size)
-  if (model .eq. 2 .or. model .eq. 3) then
-    allocate(orbsperatom_tmp(orbsperatom_size))
-    orbsperatom_tmp(:) = orbsperatom(1:orbsperatom_size)
-  end if
+  ! print*, "DEBUG: "
+  ! print*, "elastic_tol =", elastic_tol
+  ! print*, "inelastic_tol =", inelastic_tol
+  call set_scba_tolerances(LIB%pNEGF, elastic_tol, inelastic_tol)
 
-  if (model .eq. 1) call set_elph_dephasing(LIB%pNEGF, coupling_tmp, niter)
-  if (model .eq. 2) call set_elph_block_dephasing(LIB%pNEGF, coupling_tmp, orbsperatom_tmp, niter)
-  if (model .eq. 3) call set_elph_s_dephasing(LIB%pNEGF, coupling_tmp, orbsperatom_tmp, niter)
-
-end subroutine negf_set_elph_dephasing
+end subroutine negf_set_scba_tolerances
 
 
 !!> Write memory statistics
