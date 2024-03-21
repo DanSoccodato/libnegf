@@ -1133,7 +1133,7 @@ subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, latti
   use ln_precision        ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)                       !if:var:in
-  real(c_double), intent(in) :: coords(n_atoms,dims)        !if:var:in
+  real(c_double), intent(in) :: coords(dims,n_atoms)        !if:var:in
   integer(c_int), intent(in), value :: n_atoms              !if:var:in
   integer(c_int), intent(in), value :: dims                 !if:var:in
   integer(c_int), intent(in) :: matrix_indices(n_atoms)     !if:var:in
@@ -1218,20 +1218,22 @@ subroutine negf_current(handler, current, c_unitsOfH, c_unitsOfJ) bind(C)
 end subroutine negf_current
 
 
-subroutine negf_layer_current(handler, ndofs, layer_current) bind(C)
+subroutine negf_layer_current(handler, nlayers, layer_current) bind(C)
   use libnegfAPICommon  ! if:mod:use  use negf_param
   use ln_precision      !if:mod:use
   use libnegf           ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)  ! if:var:in
-  integer :: ndofs                     ! if:var:in
-  real(dp) :: layer_current(ndofs)           ! if:var:in
+  integer, intent(in) :: nlayers                     ! if:var:in
+  real(dp), intent(out) :: layer_current(nlayers)           ! if:var:in
 
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
 
-  ! call compute_density_efa(LIB%pNEGF, density, particle)
+  call compute_layer_current(LIB%pNEGF)
+
+  layer_current = LIB%pNEGF%currents
 
 end subroutine negf_layer_current
 

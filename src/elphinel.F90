@@ -316,12 +316,23 @@ contains
     this%local_kindex = kindex
 
     if (present(equiv_kpoints)) then
+      if (allocated(this%equivalent_kpoints)) deallocate(this%equivalent_kpoints)
+      allocate(this%equivalent_kpoints)
+
+      if (allocated(this%equivalent_kpoints%EqPoints))  deallocate(this%equivalent_kpoints%EqPoints)
       allocate(this%equivalent_kpoints%EqPoints(size(kweights)))
+
       do i = 1, size(kweights)
+        if (allocated(this%equivalent_kpoints%EqPoints(i)%points)) then
+          call log_deallocate(this%equivalent_kpoints%EqPoints(i)%points)
+        endif
         call log_allocate(this%equivalent_kpoints%EqPoints(i)%points, 3, this%equivalent_kpoints%EqPoints(i)%n_eq)
       enddo
       this%equivalent_kpoints = equiv_kpoints
+
     else
+      if (allocated(this%equivalent_kpoints)) deallocate(this%equivalent_kpoints)
+      allocate(this%equivalent_kpoints)
       this%equivalent_kpoints%present = .false.
     endif
 
