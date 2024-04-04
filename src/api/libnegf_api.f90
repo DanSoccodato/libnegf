@@ -1095,14 +1095,14 @@ subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indice
   use ln_precision        ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)               !if:var:in
-  real(c_double), intent(in) :: kpoints(dims,nK)    !if:var:in
   integer(c_int), intent(in), value :: dims         !if:var:in
   integer(c_int), intent(in), value :: nK           !if:var:in
+  real(c_double), intent(in) :: kpoints(dims,nK)    !if:var:in
   real(c_double), intent(in) :: kweights(nK)        !if:var:in
-  integer(c_int), intent(in) :: local_k_indices(n_local) !if:var:in
   integer(c_int), intent(in), value :: n_local           !if:var:in
-  real(c_double), intent(in) :: eqv_points(dims,m_eq)    !if:var:in
+  integer(c_int), intent(in) :: local_k_indices(n_local) !if:var:in
   integer(c_int), intent(in), value :: m_eq              !if:var:in
+  real(c_double), intent(in) :: eqv_points(dims,m_eq)    !if:var:in
   integer(c_int), intent(in) :: equiv_mult(nK)           !if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1133,12 +1133,12 @@ subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, latti
   use ln_precision        ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)                       !if:var:in
-  real(c_double), intent(in) :: coords(dims,n_atoms)        !if:var:in
   integer(c_int), intent(in), value :: n_atoms              !if:var:in
   integer(c_int), intent(in), value :: dims                 !if:var:in
-  integer(c_int), intent(in) :: matrix_indices(n_atoms)     !if:var:in
-  real(c_double), intent(in) :: lattice_vecs(dims,n_vecs)   !if:var:in
   integer(c_int), intent(in), value :: n_vecs      !if:var:in
+  integer(c_int), intent(in) :: matrix_indices(n_atoms)     !if:var:in
+  real(c_double), intent(in) :: coords(dims,n_atoms)        !if:var:in
+  real(c_double), intent(in) :: lattice_vecs(dims,n_vecs)   !if:var:in
   integer(c_int), intent(in), value :: trans_dir   !if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1262,8 +1262,8 @@ subroutine negf_set_elph_dephasing(handler, coupling, coupling_size, scba_niter)
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)  ! if:var:in
-  real(c_double), intent(in) :: coupling(coupling_size)  ! if:var:in
   integer(c_int), intent(in), value :: coupling_size ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)  ! if:var:in
   integer(c_int), intent(in), value :: scba_niter ! if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1292,10 +1292,10 @@ subroutine negf_set_elph_block_dephasing(handler, coupling, coupling_size, orbsp
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: coupling_size          ! if:var:in
-  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in
+  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
   integer(c_int), intent(in), value :: scba_niter             ! if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1328,10 +1328,10 @@ subroutine negf_set_elph_s_dephasing(handler, coupling, coupling_size, orbsperat
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: coupling_size          ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
+  integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in\
   integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
-  integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in
   integer(c_int), intent(in), value :: scba_niter             ! if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1364,8 +1364,8 @@ subroutine negf_set_elph_polaroptical(handler, coup, coup_size, wq, kbT, deltaz,
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coup(coup_size)       ! if:var:in
   integer(c_int), intent(in), value :: coup_size          ! if:var:in
+  real(c_double), intent(in) :: coup(coup_size)       ! if:var:in
   real(c_double), intent(in), value :: wq                     ! if:var:in
   real(c_double), intent(in), value :: kbT                    ! if:var:in
   real(c_double), intent(in), value :: deltaz                 ! if:var:in
@@ -1385,19 +1385,6 @@ subroutine negf_set_elph_polaroptical(handler, coup, coup_size, wq, kbT, deltaz,
   coupling_tmp(:) = coup(1:coup_size)
   trid_tmp = logical(trid)
 
-  ! print*, "DEBUG: Polar optical"
-  ! print*, "Coupling: ", coupling_tmp
-  ! print*, "max_scba_iterations: ", scba_niter
-  ! print*, "frequency: ", wq
-  ! print*, "eps_r:", eps_r
-  ! print*, "eps_inf: ", eps_inf
-  ! print*, "q0: ", q0
-  ! print*, "cell area: ", cell_area
-  ! print*, "deltaz: ", deltaz
-  ! print*, "kbt: ", kbt
-  ! print*, "tridiagonal: ", trid_tmp
-  ! print*, ""
-
   call set_elph_polaroptical(LIB%pNEGF, coupling_tmp, wq, kbT, deltaz, eps_r, eps_inf, q0, cell_area, scba_niter, trid_tmp)
 
 end subroutine negf_set_elph_polaroptical
@@ -1411,8 +1398,8 @@ subroutine negf_set_elph_nonpolaroptical(handler, coupling, coup_size, wq, kbT, 
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coupling(coup_size)       ! if:var:in
   integer(c_int), intent(in), value :: coup_size          ! if:var:in
+  real(c_double), intent(in) :: coupling(coup_size)       ! if:var:in
   real(c_double), intent(in), value :: wq                     ! if:var:in
   real(c_double), intent(in), value :: kbT                    ! if:var:in
   real(c_double), intent(in), value :: deltaz                 ! if:var:in
