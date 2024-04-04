@@ -170,9 +170,9 @@ module elphinel
      !> grid shift of hwq  iEshif
      integer(c_int), value :: iEshift
      !> Green Function
-     type(c_ptr) :: GG
+     type(c_ptr) :: GG(:,:)
      !> self energy
-     type(c_ptr) :: Sigma
+     type(c_ptr) :: Sigma(:,:)
      !> 6 Buffers of size Np x Np
      complex(c_double_complex) :: sbuff1(*)
      complex(c_double_complex) :: sbuff2(*)
@@ -766,6 +766,7 @@ contains
 #:if defined("MPI")
     integer :: ii, ibl, nbl, Np, Mp, NK, NE, NKloc, NEloc, iEshift, err
     integer :: iK, iE, Ndz, PL_start
+    integer :: transDir
     complex(c_double_complex) :: fac_min, fac_plus
     complex(c_double_complex), allocatable :: sbuff1(:,:), rbuff1(:,:)
     complex(c_double_complex), allocatable :: sbuff2(:,:), rbuff2(:,:)
@@ -791,6 +792,7 @@ contains
     !end if
     Ndz = size(this%Kmat,1)
     label%spin = 0
+    transDir = this%basis%transportDirection
     if (present(spin)) then
        label%spin = spin
     end if
@@ -811,7 +813,7 @@ contains
       ! Project atom position on the coarser grid
       call log_allocate(izr,Np)
       do ii = 1, Np
-        izr(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+        izr(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
       end do
       label%row_block = ibl
       label%col_block = ibl
@@ -845,7 +847,7 @@ contains
         ! Project atom position on the coarser grid (two indep. arrays for rows and cols)
         call log_allocate(izc,Mp)
         do ii = 1, Mp
-          izc(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+          izc(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
         end do
 
         ! -------------------- supradiagonal blocks -----------------------------------------------------
@@ -1006,6 +1008,7 @@ contains
 #:if defined("MPI")
     integer :: ii, ibl, nbl, Np, Mp, NK, NE, NKloc, NEloc, iEshift, err
     integer :: iK, iE, Ndz, PL_start
+    integer :: transDir
     complex(c_double_complex) :: fac_min, fac_plus
     complex(c_double_complex), allocatable :: sbuff1(:,:), rbuff1(:,:)
     complex(c_double_complex), allocatable :: sbuff2(:,:), rbuff2(:,:)
@@ -1031,6 +1034,7 @@ contains
     !end if
     Ndz = size(this%Kmat, 1)
     label%spin = 1
+    transDir = this%basis%transportDirection
     if (present(spin)) then
       label%spin = spin
     end if
@@ -1050,7 +1054,7 @@ contains
       ! Project atom position on the coarser grid
       call log_allocate(izr,Np)
       do ii = 1, Np
-        izr(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+        izr(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
       end do
       label%row_block = ibl
       label%col_block = ibl
@@ -1076,7 +1080,7 @@ contains
         ! Project atom position on the coarser grid (two indep. arrays for rows and cols)
         call log_allocate(izc,Mp)
         do ii = 1, Mp
-          izc(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+          izc(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
         end do
 
         ! -------------------- supradiagonal blocks -----------------------------------------------------
