@@ -343,32 +343,54 @@ subroutine zcreate_CSR(mat,nrow,ncol,nnz)
 end subroutine zcreate_CSR
 ! ------------------------------------------------------------------
 
-subroutine zinit_CSR(mat)
+subroutine zinit_CSR(mat,diag)
   type(z_CSR) :: mat
+  complex(dp), dimension(:), optional :: diag
 
   integer :: k
 
   if(mat%nnz.ne.mat%nrow) STOP 'cannot initialize matrix (nnz != nrow)'
+  if (present(diag)) then
+   if(len(diag).ne.mat%nrow) STOP 'cannot initialize matrix (len(diag) != nrow)'
+  endif
 
-  do k=1,Mat%nrow
-     Mat%nzval(k)=(0.0_dp, 0.0_dp)
-     Mat%colind(k)=k
-     Mat%rowpnt(k)=k
-  enddo
+  if (.not. present(diag)) then
+   do k=1,Mat%nrow
+      Mat%nzval(k)=(0.0_dp, 0.0_dp)
+      Mat%colind(k)=k
+      Mat%rowpnt(k)=k
+   enddo
+  else
+   do k=1,Mat%nrow
+      Mat%nzval(k)=diag(k)
+      Mat%colind(k)=k
+      Mat%rowpnt(k)=k
+   enddo
+  endif
   Mat%rowpnt(mat%nrow+1)=mat%nrow+1
 
 end subroutine zinit_CSR
 ! ------------------------------------------------------------------
-subroutine zcreate_id_CSR(mat,nrow)
+subroutine zcreate_id_CSR(mat,nrow,diag)
   type(z_CSR) :: mat
+  complex(dp), dimension(:), optional :: diag
   integer nrow, i
-
+  
+  
   call zcreate_CSR(mat,nrow,nrow,nrow)
-  do i=1,nrow
-     mat%nzval(i)=(1.0_dp, 0.0_dp)
-     mat%rowpnt(i)=i
-     mat%colind(i)=i
-  enddo
+  if (.not. present(diag)) then
+   do i=1,nrow
+      mat%nzval(i)=(1.0_dp, 0.0_dp)
+      mat%rowpnt(i)=i
+      mat%colind(i)=i
+   enddo
+  else
+   do i=1,nrow
+      mat%nzval(i)=diag(i)
+      mat%rowpnt(i)=i
+      mat%colind(i)=i
+   enddo
+  endif
   mat%rowpnt(nrow+1)=nrow+1
 
 end subroutine zcreate_id_CSR

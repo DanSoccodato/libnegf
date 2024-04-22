@@ -406,19 +406,18 @@ subroutine negf_create_hs(handler, nHk) bind(C)
 end subroutine negf_create_hs
 
 !!* Passing fortran style mpi communicator.
-!!* @param  handler The handler to this negf instance.
-subroutine negf_set_mpi_fcomm(handler, comm) bind(C)
-  use libnegfAPICommon  ! if:mod:use
-  use libnegf           ! if:mod:use
-  use ln_precision      ! if:mod:use
+subroutine negf_set_mpi_fcomm(comm) bind(C)
+  use mpi_globals, only: test_bare_reduce ! if:mod:use
   implicit none
-  integer :: handler(DAC_handlerSize)  ! if:var:in
-  integer, intent(in), value :: comm    ! if:var:in
+  integer, intent(in), value :: comm !if:var:in
 
-  type(NEGFpointers) :: LIB
+  ! type(NEGFpointers) :: LIB
 
-  LIB = transfer(handler, LIB)
-  call set_mpi_bare_comm(LIB%pNEGF, comm)
+  ! LIB = transfer(handler, LIB)
+  print*, "INSIDE set_mpi_fcomm"
+  call test_bare_reduce(comm, "api.f90, comm_from_TC")
+  stop
+  ! call set_mpi_bare_comm(LIB%pNEGF, comm)
 
 end subroutine negf_set_mpi_fcomm
 
@@ -427,6 +426,7 @@ subroutine negf_cartesian_init(handler, in_comm, nk, cart_comm, k_comm) bind(C)
   use iso_c_binding, only : c_int  ! if:mod:use
   use libnegfAPICommon  ! if:mod:use
   use libnegf           ! if:mod:use
+  use mpi_globals, only: test_bare_reduce ! if:mod:use
   use ln_precision      ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)            ! if:var:in
@@ -438,6 +438,7 @@ subroutine negf_cartesian_init(handler, in_comm, nk, cart_comm, k_comm) bind(C)
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
+  call test_bare_reduce(in_comm, "api.f90, comm_from_TC")
   call set_cartesian_bare_comms(LIB%pNEGF, in_comm, nk, cart_comm, k_comm)
 
 end subroutine negf_cartesian_init
@@ -1095,14 +1096,14 @@ subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indice
   use ln_precision        ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)               !if:var:in
-  real(c_double), intent(in) :: kpoints(dims,nK)    !if:var:in
   integer(c_int), intent(in), value :: dims         !if:var:in
   integer(c_int), intent(in), value :: nK           !if:var:in
+  real(c_double), intent(in) :: kpoints(dims,nK)    !if:var:in
   real(c_double), intent(in) :: kweights(nK)        !if:var:in
-  integer(c_int), intent(in) :: local_k_indices(n_local) !if:var:in
   integer(c_int), intent(in), value :: n_local           !if:var:in
-  real(c_double), intent(in) :: eqv_points(dims,m_eq)    !if:var:in
+  integer(c_int), intent(in) :: local_k_indices(n_local) !if:var:in
   integer(c_int), intent(in), value :: m_eq              !if:var:in
+  real(c_double), intent(in) :: eqv_points(dims,m_eq)    !if:var:in
   integer(c_int), intent(in) :: equiv_mult(nK)           !if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1133,12 +1134,12 @@ subroutine negf_init_basis(handler, coords, n_atoms, dims, matrix_indices, latti
   use ln_precision        ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)                       !if:var:in
-  real(c_double), intent(in) :: coords(dims,n_atoms)        !if:var:in
   integer(c_int), intent(in), value :: n_atoms              !if:var:in
   integer(c_int), intent(in), value :: dims                 !if:var:in
+  real(c_double), intent(in) :: coords(dims,n_atoms)        !if:var:in
   integer(c_int), intent(in) :: matrix_indices(n_atoms)     !if:var:in
-  real(c_double), intent(in) :: lattice_vecs(dims,n_vecs)   !if:var:in
   integer(c_int), intent(in), value :: n_vecs      !if:var:in
+  real(c_double), intent(in) :: lattice_vecs(dims,n_vecs)   !if:var:in
   integer(c_int), intent(in), value :: trans_dir   !if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1228,12 +1229,18 @@ subroutine negf_layer_current(handler, nlayers, layer_current) bind(C)
   real(dp), intent(out) :: layer_current(nlayers)           ! if:var:in
 
   type(NEGFpointers) :: LIB
+  integer :: i
 
   LIB = transfer(handler, LIB)
 
   call compute_layer_current(LIB%pNEGF)
 
   layer_current = LIB%pNEGF%currents
+
+  print*, "DEBUG: inside libnegf_api.f90, layer currents:"
+  do i = 1, size(layer_current,1)
+    print*, layer_current(i)
+  enddo
 
 end subroutine negf_layer_current
 
@@ -1262,8 +1269,8 @@ subroutine negf_set_elph_dephasing(handler, coupling, coupling_size, scba_niter)
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)  ! if:var:in
-  real(c_double), intent(in) :: coupling(coupling_size)  ! if:var:in
   integer(c_int), intent(in), value :: coupling_size ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)  ! if:var:in
   integer(c_int), intent(in), value :: scba_niter ! if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1292,10 +1299,10 @@ subroutine negf_set_elph_block_dephasing(handler, coupling, coupling_size, orbsp
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: coupling_size          ! if:var:in
-  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in
+  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
   integer(c_int), intent(in), value :: scba_niter             ! if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1328,10 +1335,10 @@ subroutine negf_set_elph_s_dephasing(handler, coupling, coupling_size, orbsperat
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: coupling_size          ! if:var:in
-  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
+  real(c_double), intent(in) :: coupling(coupling_size)       ! if:var:in
   integer(c_int), intent(in), value :: orbsperatm_size        ! if:var:in
+  integer(c_int), intent(in) :: orbsperatm(orbsperatm_size)   ! if:var:in
   integer(c_int), intent(in), value :: scba_niter             ! if:var:in
 
   type(NEGFpointers) :: LIB
@@ -1364,8 +1371,8 @@ subroutine negf_set_elph_polaroptical(handler, coup, coup_size, wq, kbT, deltaz,
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coup(coup_size)       ! if:var:in
   integer(c_int), intent(in), value :: coup_size          ! if:var:in
+  real(c_double), intent(in) :: coup(coup_size)       ! if:var:in
   real(c_double), intent(in), value :: wq                     ! if:var:in
   real(c_double), intent(in), value :: kbT                    ! if:var:in
   real(c_double), intent(in), value :: deltaz                 ! if:var:in
@@ -1411,8 +1418,8 @@ subroutine negf_set_elph_nonpolaroptical(handler, coupling, coup_size, wq, kbT, 
   use lib_param      ! if:mod:use
   implicit none
   integer(c_int) :: handler(DAC_handlerSize)                  ! if:var:in
-  real(c_double), intent(in) :: coupling(coup_size)       ! if:var:in
   integer(c_int), intent(in), value :: coup_size          ! if:var:in
+  real(c_double), intent(in) :: coupling(coup_size)       ! if:var:in
   real(c_double), intent(in), value :: wq                     ! if:var:in
   real(c_double), intent(in), value :: kbT                    ! if:var:in
   real(c_double), intent(in), value :: deltaz                 ! if:var:in

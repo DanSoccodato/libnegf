@@ -24,7 +24,8 @@ module mpi_globals
 #:if defined("MPI")
   use mpi
   use omp_lib, only : omp_get_max_threads, omp_get_num_threads
-  use libmpifx_module, only : mpifx_comm
+  use libmpifx_module!, only : mpifx_comm
+  use ln_precision
   private
 #:endif
 
@@ -36,6 +37,8 @@ module mpi_globals
   public :: negf_mpi_init
   public :: negf_cart_init
   public :: check_cart_comm
+  public :: test_mpifx_reduce
+  public :: test_bare_reduce
 
   contains
 
@@ -115,6 +118,10 @@ module mpi_globals
       call kComm%init(outComm, mpierr)
       if (present(barekComm)) barekComm = outComm
 
+      ! print*, "DEBUG: inside negf_cart_init: energyComm: ", energyComm
+      ! print*, "DEBUG: inside negf_cart_init: kComm: ", kComm
+      ! print*, "DEBUG: inside negf_cart_init: cartComm: ", cartComm
+
     end subroutine negf_cart_init
 
     subroutine check_cart_comm(cartComm, mpierror)
@@ -156,6 +163,104 @@ module mpi_globals
    !   end if
 
    ! end subroutine check_omp_mpi
+
+    subroutine test_mpifx_reduce(inComm, name)
+      type(mpifx_comm), intent(in) :: inComm
+      character(len=*), intent(in) :: name
+
+      real(dp) :: test_array(5)
+      
+      test_array = 1.0_dp
+
+      print*, ""
+      print*, "TEST REDUCE (MPIFX), communicator:", name
+      print*, name, "%id", inComm%id
+      print*, name, "%size", inComm%size
+      print*, name, "%rank", inComm%rank
+      print*, name, "%leadrank", inComm%leadrank
+      print*, name, "%lead", inComm%lead  
+      print*, "Array before calling reduce:"
+      print*, test_array
+      print*, "Calling reduce..."
+      call mpifx_reduceip(inComm, test_array, MPI_SUM)
+      print*, "Array after calling reduce:"
+      print*, test_array
+      print*, "END TEST REDUCE"
+      print*, ""
+
+    end subroutine test_mpifx_reduce
+
+
+    subroutine test_bare_reduce(inComm, name)
+      integer, intent(in) :: inComm
+      character(len=*), intent(in) :: name
+
+      integer :: comm_size, rank, root0, error0, error
+      real(dp) :: test_array(5)
+      test_array = 1.0_dp
+
+      root0 = 0
+
+      call mpi_comm_size(inComm, comm_size, error0)
+      call handle_errorflag(error0, "mpi_comm_size() in mpifx_comm_init()", error)
+      if (error0 /= 0) then
+        return
+      end if
+      call mpi_comm_rank(inComm, rank, error0)
+      call handle_errorflag(error0, "mpi_comm_rank() in mpifx_comm_init()", error)
+      if (error0 /= 0) then
+        return
+      end if
+
+      print*, ""
+      print*, "TEST REDUCE (PURE MPI), communicator: ", name
+      print*, name, "%id", inComm
+      print*, name, "%size", comm_size
+      print*, name, "%rank", rank
+      print*, "Array before calling reduce:"
+      print*, test_array
+      print*, "Calling reduce..."
+      call mpi_reduce(MPI_IN_PLACE, test_array, size(test_array), MPI_DOUBLE_PRECISION, MPI_SUM, &
+      &root0, inComm, error0)
+      print*, "Array after calling reduce:"
+      print*, test_array
+      print*, "END TEST REDUCE"
+      print*, ""
+    
+    end subroutine test_bare_reduce
+
+    
+    subroutine handle_errorflag(error0, msg, error)
+
+      !> Error flag as returned by some routine.
+      integer, intent(in) :: error0
+  
+      !>  Msg to print out, if program is stopped.
+      character(*), intent(in) :: msg
+  
+      !> Optional error flag.
+      !!
+      !! If present, error0 is passed to it, otherwise if error0 was not zero, the
+      !! error message in msg is printed and the program is stopped.
+      !!
+      integer, intent(out), optional :: error
+  
+      integer :: aborterror
+  
+      if (present(error)) then
+        error = error0
+      elseif (error0 /= 0) then
+        write(*, "(A)") "Operation failed!"
+        write(*, "(A)") msg
+        write(*, "(A,I0)") "Error: ", error0
+        call mpi_abort(MPI_COMM_WORLD, MPIFX_UNHANDLED_ERROR, aborterror)
+        if (aborterror /= 0) then
+          write(*, "(A)") "Stopping code with 'mpi_abort' did not succeed, trying 'stop' instead"
+          stop 1
+        end if
+      end if
+  
+    end subroutine handle_errorflag
 
 #:endif
 

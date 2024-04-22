@@ -26,7 +26,7 @@ module libnegf
  use lib_param
  use ln_cache
  use globals, only : LST
- use mpi_globals, only : id, id0, numprocs, negf_cart_init, check_cart_comm, &
+ use mpi_globals, only : id, id0, numprocs, negf_cart_init, check_cart_comm, test_mpifx_reduce, test_bare_reduce, &
       & globals_mpi_init => negf_mpi_init
  use input_output
  use ln_structure
@@ -799,7 +799,7 @@ contains
         write(*,*) 'Equivalent k-points used in NEGF:'
         do ii = 1, size(kweights) 
           write(*,*) "For kpoint: ", negf%kpoints(:, ii), ":"
-          do jj = 1, size(negf%equivalent_kpoints%EqPoints(ii)%points)
+          do jj = 1, size(negf%equivalent_kpoints%EqPoints(ii)%points, 2)
             write(*,*) "   ", negf%equivalent_kpoints%EqPoints(ii)%points(:, jj)
           end do
         end do
@@ -1214,8 +1214,20 @@ contains
 
     call negf%globalComm%init(mpicomm)
 
+    ! call test_bare_reduce(mpicomm, "TC in_communicator")
+
+    ! call test_mpifx_reduce(negf%globalComm, "negf%globalComm")
     call negf_cart_init(negf%globalComm, nk, negf%cartComm, negf%energyComm, negf%kComm, cartComm, kComm)
+    ! call test_mpifx_reduce(negf%cartComm, "negf%cartComm")
+    ! call test_mpifx_reduce(negf%energyComm, "negf%energyComm")
+    ! call test_mpifx_reduce(negf%kComm, "negf%kComm")
     call negf_mpi_init(negf, negf%cartComm, negf%energyComm, negf%kComm)
+
+    stop
+    ! print*, "DEBUG: inside cartesian bare comms:, negf%energyComm.rank: ", negf%energyComm%rank
+    ! print*, "DEBUG: inside cartesian bare comms:, negf%energyComm.size: ", negf%energyComm%size
+    ! print*, "DEBUG: inside cartesian bare comms:, negf%energyComm: ", negf%energyComm
+    ! print*, "DEBUG: inside cartesian bare comms:, negf%kComm: ", negf%kComm
 
   end subroutine set_cartesian_bare_comms
 #:else
@@ -1445,6 +1457,8 @@ contains
     end if
 
     call destroy(negf%equivalent_kpoints)
+
+    if allocated(negf%Ef_i) deallocate(negf%Ef_i)
 
     call destroy_interactions(negf)
 
@@ -2635,5 +2649,18 @@ contains
       end do
 
    end subroutine aggregate_vec
+
+   subroutine set_intrinsic_fermi_level(Ef)
+       real(dp), dimension(:), intent(in) :: Ef
+
+       if (allocated(negf%Ef_i)) deallocate(negf%Ef_i)
+       allocate(negf%Ef_i(len(Ef)))
+
+       negf%Ef_i = Ef
+
+       ! Set also flag for triggering a z-dependent integration on the enrgy domain
+       negf%en_z_dependence = .true.
+
+   end subroutine set_intrinsic_fermi_level
 
 end module libnegf
