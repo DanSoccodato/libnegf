@@ -296,7 +296,7 @@ contains
   subroutine prepare_POKmat(this)
     class(ElPhonPolarOptical) :: this
 
-    integer :: iZ, iQ, eQ, iK, fu, nDeltaZ, nCentralAtoms
+    integer :: iZ, iQ, eQ, iK, fu, nDeltaZ, nCentralAtoms, n_eq
     real(dp) :: kq(3), kk(3), ekp(3), QQ(3), Q2, bb, z_mn, Kf
     real(dp) :: zmin, zmax, recVecs2p(3,3)
     real(dp), allocatable :: kpoint(:,:), ekpoints(:,:)
@@ -353,10 +353,11 @@ contains
         !Select the set of points equivalent to iQ
         eqv_points_iQ = this%equivalent_kpoints%EqPoints(iQ)
         !Compute the absolute k-points
-        call log_allocate(ekpoints, 3, eqv_points_iQ%n_eq)
+        n_eq = size(eqv_points_iQ%points, 2)
+        call log_allocate(ekpoints, 3, n_eq)
         ekpoints = matmul(recVecs2p, eqv_points_iQ%points)
 
-        do eQ = 1, eqv_points_iQ%n_eq
+        do eQ = 1, n_eq
           ekp = ekpoints(:,eQ)
           do iK = 1, size(this%kweight)
             kk = kpoint(:, iK)
@@ -392,7 +393,7 @@ contains
   subroutine prepare_NonPOKmat(this)
     class(ElPhonNonPolarOptical) :: this
 
-    integer :: iZ, iQ, iK, fu, nDeltaZ, nCentralAtoms, eQ
+    integer :: iZ, iQ, iK, fu, nDeltaZ, nCentralAtoms, eQ, n_eq
     real(dp) :: kq(3), kk(3), QQ, Q2, kq2, kk2, z_mn, Kf, ekp(3), ekp2
     real(dp) :: zmin, zmax, recVecs2p(3,3)
     real(dp), allocatable :: kpoint(:,:), ekpoints(:,:)
@@ -457,10 +458,11 @@ contains
         !Select the set of points equivalent to iQ
         eqv_points_iQ = this%equivalent_kpoints%EqPoints(iQ)
         !Compute the absolute k-points
-        call log_allocate(ekpoints, 3, eqv_points_iQ%n_eq)
+        n_eq = size(eqv_points_iQ%points, 2)
+        call log_allocate(ekpoints, 3, n_eq)
         ekpoints = matmul(recVecs2p, eqv_points_iQ%points)
 
-        do eQ = 1, eqv_points_iQ%n_eq
+        do eQ = 1, n_eq
           ekp = ekpoints(:,eQ)
           ekp2 = dot_product(ekp,ekp)
           if (ekp2==0.0_dp) then
