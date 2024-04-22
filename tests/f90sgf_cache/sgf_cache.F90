@@ -34,6 +34,8 @@ program main
   integer, allocatable :: rowpnt(:), colind(:)
   real(kind(1.d0)), allocatable :: nzval1(:), nzval2(:), nzval3(:), nzval4(:)
 
+  type(z_CSR) :: dm
+
   surfstart = [61,81]
   surfend = [60,80]
   contend = [80,100]
@@ -74,13 +76,17 @@ program main
 
   write(*,*) 'Compute density and save SGF'
   call compute_density_dft(pnegf)
-  call get_DM(pnegf, nnz, nrow, rowpnt, colind, nzval1)
+  call get_DM(pnegf, dm)
+  nzval1 = dm%nzval
   call destroy_DM(pnegf)
+  call destroy(dm)
 
   call set_readOldDMsgf(pnegf, 0)
   call compute_density_dft(pnegf)
-  call get_DM(pnegf, nnz, nrow, rowpnt, colind, nzval2)
+  call get_DM(pnegf, dm)
+  nzval2 = dm%nzval
   call destroy_DM(pnegf)
+  call destroy(dm)
 
   if (norm2( nzval1 - nzval2) .gt. 1e-10) then
     error stop "Mismatch between density matrix after reloading surface green's functions"
@@ -91,8 +97,10 @@ program main
   params%SGFcache = 1
   call set_params(pnegf, params)
   call compute_density_dft(pnegf)
-  call get_DM(pnegf, nnz, nrow, rowpnt, colind, nzval3)
+  call get_DM(pnegf, dm)
+  nzval3 = dm%nzval
   call destroy_DM(pnegf)
+  call destroy(dm)
 
   if (norm2( nzval2 - nzval3) .gt. 1e-10) then
     error stop "Mismatch between density matrix with SGF from disk and re-computed"
@@ -100,8 +108,10 @@ program main
 
   call set_readOldDMsgf(pnegf, 0)
   call compute_density_dft(pnegf)
-  call get_DM(pnegf, nnz, nrow, rowpnt, colind, nzval4)
+  call get_DM(pnegf, dm)
+  nzval4 = dm%nzval
   call destroy_DM(pnegf)
+  call destroy(dm)
 
   if (norm2( nzval3 - nzval4) .gt. 1e-10) then
     error stop "Mismatch between density matrix with SGF reading from memory"
