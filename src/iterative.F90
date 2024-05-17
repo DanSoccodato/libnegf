@@ -528,7 +528,6 @@ CONTAINS
     logical :: tTridiag
 
     if (.not.associated(negf%G_r)) then
-       print*,"Allocate negf%G_r"
        allocate(TMatrixCacheMem::negf%G_r)
     end if
     select type(p => negf%G_r)

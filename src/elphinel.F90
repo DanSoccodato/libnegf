@@ -34,7 +34,7 @@ module elphinel
   use distributions, only : bose
   use ln_cache
   use iso_c_binding
-  use mpi
+  use mpi_f08
   use mpi_globals
   use inversions, only : inverse
   use self_energy, only: TMatPointer, selfenergy
@@ -50,7 +50,7 @@ module elphinel
   type, abstract, extends(TInelastic) :: ElPhonInel
     private
     !> communicator of the cartesian grid
-    integer(c_int) :: cart_comm
+    type(MPI_Comm) :: cart_comm
 
     !> holds atomic structure: Only the scattering region
     type(TBasisCenters) :: basis
@@ -98,6 +98,7 @@ module elphinel
     procedure :: destroy_sigma_r
     procedure :: destroy_sigma_n
     procedure :: set_kpoints
+    procedure :: set_structure
     procedure :: set_EnGrid
     procedure(abstract_prepare), deferred :: prepare
     procedure :: destroy => destroy_elph
@@ -152,7 +153,7 @@ contains
   subroutine ElPhonPO_init(this, comm, struct, basis, coupling, wq, Temp, &
              & dz, eps0, eps_inf, q0, cell_area, niter, tridiag)
     type(ElPhonPolarOptical) :: this
-    integer, intent(in) :: comm
+    type(MPI_Comm), intent(in) :: comm
     type(TStruct_Info), intent(in) :: struct
     type(TBasisCenters), intent(in) :: basis
     real(dp), dimension(:), intent(in) :: coupling
@@ -185,10 +186,23 @@ contains
     this%tTridiagonal = tridiag
 
     ! Initialize the cache space
-    if (allocated(this%sigma_r)) call this%sigma_r%destroy()
-    this%sigma_r = TMatrixCacheMem(tagname='Sigma_r')
-    if (allocated(this%sigma_n)) call this%sigma_n%destroy()
-    this%sigma_n = TMatrixCacheMem(tagname='Sigma_n')
+    if (associated(this%sigma_r)) then
+      error stop 'Initialization of PO Phonon called twice' 
+    end if
+    allocate(TMatrixCacheMem::this%sigma_r)
+    select type(p => this%sigma_r)
+    type is(TMatrixCacheMem)
+      p%tagname = 'Sigma_r'
+    end select   
+
+    if (associated(this%sigma_n)) then
+      error stop 'Initialization of PO Phonon called twice' 
+    end if
+    allocate(TMatrixCacheMem::this%sigma_n)
+    select type(p => this%sigma_n)
+    type is(TMatrixCacheMem)
+      p%tagname = 'Sigma_n'
+    end select   
 
   end subroutine ElPhonPO_init
 
@@ -201,7 +215,7 @@ contains
   subroutine ElPhonNonPO_init(this, comm, struct, basis, coupling, wq, Temp, &
              & dz, D0, cell_area, niter, tridiag)
     type(ElPhonNonPolarOptical) :: this
-    integer, intent(in) :: comm
+    type(MPI_Comm), intent(in) :: comm
     type(TStruct_Info), intent(in) :: struct
     type(TBasisCenters), intent(in) :: basis
     real(dp), dimension(:), intent(in) :: coupling
@@ -230,14 +244,14 @@ contains
     this%tTridiagonal = tridiag
 
     ! Initialize the cache space
-    if (allocated(this%sigma_r)) then
-       call this%sigma_r%destroy()
+    if (associated(this%sigma_r)) then
+      error stop 'Initialization of non-PO Phonon called twice' 
     end if
     allocate(this%sigma_r, source=TMatrixCacheMem(tagname='Sigma_r'))
-    if (allocated(this%sigma_n)) then
-       call this%sigma_n%destroy()
+    
+    if (associated(this%sigma_n)) then
+      error stop 'Initialization of non-PO Phonon called twice' 
     end if
-
     allocate(this%sigma_n, source=TMatrixCacheMem(tagname='Sigma_n'))
 
   end subroutine ElPhonNonPO_init
@@ -250,7 +264,9 @@ contains
     integer, intent(in) :: kindex(:)
     type(TEqPointsArray), intent(in), optional :: equiv_kpoints
 
-    integer :: i, nKloc, nKprocs, mpierr, kComm, myid
+    type(MPI_Comm) :: kComm
+
+    integer :: i, nKloc, nKprocs, mpierr, myid
     logical :: remain_dims(2) = [.true., .false.]
 
     this%kpoint = kpoints
@@ -276,6 +292,14 @@ contains
     call MPI_comm_rank(kComm, myid, mpierr)
 
   end subroutine set_kpoints
+
+  subroutine set_structure(this, struct)
+    class(ElPhonInel) :: this
+    type(TStruct_Info), intent(in) :: struct
+    
+    this%struct = struct
+
+  end subroutine set_structure
 
   !--------------------------------------------------------------------------
   subroutine set_EnGrid(this, deltaE, nE_global, nE_local)
@@ -514,8 +538,8 @@ contains
     if (allocated(this%local_kindex)) deallocate(this%local_kindex)
     if (allocated(this%kindices)) call log_deallocate(this%kindices)
     if (allocated(this%Kmat)) call log_deallocate(this%Kmat)
-    if (allocated(this%sigma_r)) call this%sigma_r%destroy()
-    if (allocated(this%sigma_n)) call this%sigma_n%destroy()
+    call this%destroy_sigma_r()
+    call this%destroy_sigma_n()
     call destroy(this%equivalent_kpoints)
 
   end subroutine destroy_elph
@@ -727,15 +751,16 @@ contains
     !  stop "ERROR: iEshift>NEloc. More points are needed in the energy grid"
     !end if
     Ndz = size(this%Kmat,1)
-    label%spin = 0
+    label%spin = 1
     if (present(spin)) then
        label%spin = spin
     end if
+
     allocate(pGG(NEloc,NKloc))
     allocate(pSigma(NEloc,NKloc))
 
     select type(p => this%sigma_r)
-    type is(TMatrixCacheMem)
+    class is(TMatrixCacheMem)
        if (.not.p%isInitialized) then
           call p%init(nEloc, nKloc, nbl, 3, 1)
        end if
@@ -949,7 +974,7 @@ contains
     allocate(pSigma(NEloc,NKloc))
 
     select type(p => this%sigma_n)
-    type is(TMatrixCacheMem)
+    class is(TMatrixCacheMem)
        if (.not.p%isInitialized) then
           call p%init(nEloc, nKloc, nbl, 3, 1)
        end if
@@ -1076,7 +1101,7 @@ contains
   !> Destroy Sigma_r
   subroutine destroy_Sigma_r(this)
     class(ElPhonInel) :: this
-    if (allocated(this%sigma_r)) then
+    if (associated(this%sigma_r)) then
       call this%sigma_r%destroy()
     end if
   end subroutine destroy_Sigma_r
@@ -1084,7 +1109,7 @@ contains
   !> Destroy Sigma_n
   subroutine destroy_Sigma_n(this)
     class(ElPhonInel) :: this
-    if (allocated(this%sigma_n)) then
+    if (associated(this%sigma_n)) then
       call this%sigma_n%destroy()
     end if
   end subroutine destroy_Sigma_n

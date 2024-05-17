@@ -19,7 +19,8 @@ function(find_or_fetch_mpifx)
   include(FetchContent)
   FetchContent_Declare(FetchedMpiFx
     GIT_REPOSITORY https://github.com/dftbplus/mpifx/
-    GIT_TAG "9f6cfcc38df52e292156e9435b0070fdb95f85ce")
+    GIT_TAG "main")
+    # GIT_TAG "9f6cfcc38df52e292156e9435b0070fdb95f85ce")
 
   FetchContent_MakeAvailable(FetchedMpiFx)
   add_library(MpiFx::MpiFx INTERFACE IMPORTED GLOBAL)

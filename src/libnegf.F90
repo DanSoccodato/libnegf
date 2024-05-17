@@ -26,7 +26,7 @@ module libnegf
  use lib_param
  use ln_cache
  use globals, only : LST
- use mpi_globals, only : id, id0, numprocs, negf_cart_init, check_cart_comm, test_mpifx_reduce, test_bare_reduce, &
+ use mpi_globals, only : id, id0, numprocs, negf_cart_init, check_cart_comm, MPI_Comm, test_bare_reduce, &
       & globals_mpi_init => negf_mpi_init
  use input_output
  use ln_structure
@@ -120,6 +120,7 @@ module libnegf
                                     ! and heat currents
  public :: thermal_conductance
 
+ public :: get_CSR_matrix
  public :: reorder, sort, swap            ! not used
  public :: printcsr   ! debugging routines
  public :: printcsrij   ! debugging routines
@@ -497,7 +498,11 @@ contains
     if (ii > size(negf%HS)) then
        stop "Error: set_S_id with index > allocated array. Call create_HS with correct size"
     else
-      if (.not.associated(negf%HS(ii)%S)) allocate(negf%HS(ii)%S)
+      if (.not.associated(negf%HS(ii)%S)) then
+        allocate(negf%HS(ii)%S)
+      else
+        call destroy(negf%HS(ii)%S)
+      endif
     end if
 
     call create_id(negf%HS(ii)%S, nrow)
@@ -1207,27 +1212,24 @@ contains
 
   subroutine set_cartesian_bare_comms(negf, mpicomm, nk, cartComm, kComm)
     type(Tnegf), intent(inout) :: negf
-    integer, intent(in) :: mpicomm
+    type(MPI_Comm), intent(in) :: mpicomm
     integer, intent(in) :: nk
     integer, intent(out) :: cartComm
     integer, intent(out) :: kComm
 
+    type(MPI_Comm) :: cartComm_f08, kComm_f08
+
     call negf%globalComm%init(mpicomm)
 
-    ! call test_bare_reduce(mpicomm, "TC in_communicator")
-
-    ! call test_mpifx_reduce(negf%globalComm, "negf%globalComm")
-    call negf_cart_init(negf%globalComm, nk, negf%cartComm, negf%energyComm, negf%kComm, cartComm, kComm)
-    ! call test_mpifx_reduce(negf%cartComm, "negf%cartComm")
-    ! call test_mpifx_reduce(negf%energyComm, "negf%energyComm")
-    ! call test_mpifx_reduce(negf%kComm, "negf%kComm")
+    call negf_cart_init(negf%globalComm, nk, negf%cartComm, negf%energyComm, negf%kComm, &
+          & cartComm_f08, kComm_f08)
     call negf_mpi_init(negf, negf%cartComm, negf%energyComm, negf%kComm)
 
-    stop
-    ! print*, "DEBUG: inside cartesian bare comms:, negf%energyComm.rank: ", negf%energyComm%rank
-    ! print*, "DEBUG: inside cartesian bare comms:, negf%energyComm.size: ", negf%energyComm%size
-    ! print*, "DEBUG: inside cartesian bare comms:, negf%energyComm: ", negf%energyComm
-    ! print*, "DEBUG: inside cartesian bare comms:, negf%kComm: ", negf%kComm
+    cartComm = cartComm_f08%MPI_VAL
+    kComm = kComm_f08%MPI_VAL
+
+    ! print*, "DEBUG: negf%energyComm%rank = ", negf%energyComm%rank
+    ! print*, "DEBUG: negf%kComm%rank = ", negf%kComm%rank
 
   end subroutine set_cartesian_bare_comms
 #:else
@@ -1457,8 +1459,6 @@ contains
     end if
 
     call destroy(negf%equivalent_kpoints)
-
-    if allocated(negf%Ef_i) deallocate(negf%Ef_i)
 
     call destroy_interactions(negf)
 
@@ -2650,17 +2650,35 @@ contains
 
    end subroutine aggregate_vec
 
-   subroutine set_intrinsic_fermi_level(Ef)
-       real(dp), dimension(:), intent(in) :: Ef
+   !-------------------------------------------------------------------
+  !> Pass CSR vectors to create z_CSR type
+  !! @param[in] nrow: number of rows
+  !! @param[in] nzval: number of non zero values
+  !! @param[in] colind: column indexes
+  !! @param[in] rowpnt: row pointers
+  !! @param[inout] mat: the z_CSR matrix
+  subroutine get_CSR_matrix(nrow, nzval, colind, rowpnt, mat)
+    integer :: nrow
+    complex(dp) :: nzval(*)
+    integer :: colind(*)
+    integer :: rowpnt(*)
+    type(z_CSR) :: mat
 
-       if (allocated(negf%Ef_i)) deallocate(negf%Ef_i)
-       allocate(negf%Ef_i(len(Ef)))
+    integer :: nnz, i, base, ii
 
-       negf%Ef_i = Ef
+    base = 0
+    if (rowpnt(1) == 0) base = 1
 
-       ! Set also flag for triggering a z-dependent integration on the enrgy domain
-       negf%en_z_dependence = .true.
+    nnz = rowpnt(nrow+1)-rowpnt(1)
+    call create(mat,nrow,nrow,nnz)
 
-   end subroutine set_intrinsic_fermi_level
+    do i = 1, nnz
+      mat%nzval(i) = nzval(i)
+      mat%colind(i) = colind(i) + base
+    enddo
+    do i = 1,nrow+1
+      mat%rowpnt(i) = rowpnt(i) + base
+    enddo
+  end subroutine get_CSR_matrix
 
 end module libnegf

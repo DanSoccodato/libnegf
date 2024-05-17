@@ -1036,7 +1036,7 @@ contains
     type(z_CSR) :: G, TmpMt
 
     real(dp), DIMENSION(:), allocatable :: frm_f
-    complex(dp), DIMENSION(:), allocatable :: diag, temp
+    complex(dp), DIMENSION(:), allocatable :: diag
     real(dp) :: ncyc, Er, scba_elastic_error, scba_inelastic_error
     complex(dp) :: zt, Ec
 
@@ -1052,9 +1052,6 @@ contains
 
     call create(TmpMt,negf%H%nrow,negf%H%ncol,negf%H%nrow)
     call initialize(TmpMt)
-
-    ! For electron/hole integration
-    allocate(temp(negf%H%nrow))
 
     if (negf%cartComm%rank == 0) then
       call write_info_parallel(negf%verbose,30,'REAL AXIS INTEGRAL (inel)',Npoints)
@@ -1082,7 +1079,6 @@ contains
 
       ! Density matrix initialization
       TmpMt%nzval = (0.0_dp, 0.0_dp)
-      temp = (0.0_dp, 0.0_dp)
 
       ! Loop over local k-points
       kloop: do iK = 1, size(negf%local_k_index)
@@ -1125,21 +1121,8 @@ contains
              zt = zt * Er
           end if
 
-          if (.not. negf%en_z_dependence) then
-            call concat(TmpMt,zt,G,1,1)
-          else
-            ! Electron/hole integration: we have a z-dependent energy interval (depends on Ef_i(z))
-            Ef_i = negf%Ef_i
-            call log_allocate(diag, G%nrow)
-            call getdiag(G, diag)
-            if (particle == 1) then
-              where(Ef_i .le. Er) temp = temp + zt * diag
-            else
-              where(Ef_i .ge. Er) temp = temp + zt * diag
-            endif
-          endif 
+          call concat(TmpMt,zt,G,1,1)
 
-          call log_deallocate(diag)
           call destroy(G)
 
         enddo enloop
@@ -1153,10 +1136,7 @@ contains
       call compute_Sigmas_inelastic(negf)
       if (id0.and.negf%verbose.gt.VBT) call write_clock
 
-      ! Set the csr matrix in case of electron/hole calculation
-      if (negf%en_z_dependence) call initialize(TmpMt, temp)
-
-      !Check SCBA convergence on density.
+      !Check SCBA convergence on layer currents.
       call negf%scbaDriverInelastic%check_Mat_convergence(TmpMt)
 
       if (negf%cartComm%rank == 0) then
@@ -1180,7 +1160,6 @@ contains
           call clone(TmpMt,negf%rho)
        endif
        call destroy(TmpMt)
-       call deallocate(temp)
 #:if defined("MPI")
       if (id0.and.negf%verbose.gt.VBT) call message_clock('Gather MPI results ')
       call mpifx_allreduceip(negf%energyComm, negf%rho%nzval, MPI_SUM)
@@ -1226,37 +1205,15 @@ contains
   subroutine real_axis_int_n_def(negf)
     type(Tnegf) :: negf
 
-    integer :: i, i1, np, ioffset, ncont, Npoints
-    real(dp), DIMENSION(:), allocatable :: wght, pnts
-    real(dp) :: Omega, mumax, wqmax, Emin
-    integer, allocatable :: seq(:)
-    real(dp), dimension(:), allocatable :: Ef_i  ! Intrinsic Fermi level
+    integer :: i, ioffset, ncont, Npoints
+    real(dp), DIMENSION(:), allocatable :: wght,pnts   ! Gauss-quadrature points
+    real(dp) :: Omega, mumax, muref, ff, kbT
 
     ncont = negf%str%num_conts
-    Npoints = negf%Np_real
-
-    if (.not. allocated(negf%Ef_i)) then
-        stop "Error: in real_axis_int_n_def: Intrinsic Fermi level Ef_i was not set before calling integration"
-    endif
-
-    allocate(Efi(len(negf%Ef_i)))
-    Ef_i = negf%Ef_i
-
-    ! With inelastic scattering equalize the energy points/process
-    if (negf%interactList%counter /= 0) then
-      if (mod(Npoints,numprocs) .ne. 0) then
-        do while (mod(Npoints,numprocs) .ne. 0)
-          Npoints = Npoints + 1
-        end do
-        negf%Np_real = Npoints
-      end if
-    end if
-
-    ! Get maximum wq for inelastic interactions
-    wqmax = get_max_wq(negf%interactList)
-
-    ! Omega considers maximum kT so interval is always large enough
-    Omega = negf%n_kt * maxval(negf%cont(:)%kbT_dm) + wqmax
+    ioffset = negf%Np_n(1) + negf%Np_n(2) + negf%n_poles
+    kbT = maxval(negf%cont(:)%kbT_dm)
+    Omega = negf%n_kt * kbT
+    muref = negf%muref
 
     if (ncont.gt.0) then
        mumax=maxval(negf%cont(:)%mu_n)
@@ -1264,62 +1221,33 @@ contains
        mumax=negf%muref
     endif
 
-    ! Balance N points over the energy grid
-    if (mod(Npoints,numprocs) .ne. 0) then
-      do while (mod(Npoints,numprocs) .ne. 0)
-        Npoints = Npoints + 1
-      end do
-    end if
-
-    !! destroy en_grid from previous calculation, if any
+    Npoints = negf%Np_real
     call destroy_en_grid(negf%en_grid)
     allocate(negf%en_grid(Npoints))
 
     allocate(pnts(Npoints))
     allocate(wght(Npoints))
-    
-    Emin  = min(Ef_i) - negf%DeltaEc
-    call trapez(Emin, mumax + Omega,pnts,wght,Npoints)
-    ioffset = negf%Np_n(1) + negf%Np_n(2) + negf%n_poles
 
+    call trapez(negf%Ec-negf%DeltaEc, mumax + Omega,pnts,wght,Npoints)
 
     do i = 1, Npoints
        negf%en_grid(i)%path = 1
        negf%en_grid(i)%pt = i
        negf%en_grid(i)%pt_path = ioffset + i
        negf%en_grid(i)%Ec = cmplx(pnts(i),negf%delta,dp)
-       negf%en_grid(i)%wght = negf%g_spin * wght(i)/(2.0_dp *pi)
+
+       !IMPORTANT: there is no fermi function multiplied in negf%en_grid(i)%wght anymore,
+       !so we cannot use this routine in combination with contour_int
+       negf%en_grid(i)%wght = negf%g_spin * wght(i) / (2.d0 * pi)
     enddo
 
     deallocate(wght)
     deallocate(pnts)
-    deallocate(Ef_i)
 
-    np=Npoints/numprocs
-    if (id .ne. numprocs-1) then
-      negf%local_en_points = np
-    else
-      negf%local_en_points = np + mod(Npoints,numprocs)
-    end if
-
-    if (wqmax == 0.0_dp) then
-      ! distribute energy grid round robin scheme:
-      !     0 1 2 3 ... 0 1 2 .... 0 1 2 ....
-      do i = 0, Npoints-1
-        negf%en_grid(i+1)%cpu = mod(i,numprocs)
-      enddo
-    else
-      ! With inelastic points must be contigous
-      !    0 0 0 0 ... 1 1 1 .... 2 2 2 ....
-      allocate(seq(np))
-      do i1 = 1, np
-        seq(i1) = i1
-      end do
-      do i = 0, numprocs-1
-        negf%en_grid(i*np+1:(i+1)*np)%cpu = i
-        negf%en_grid(i*np+1:(i+1)*np)%pt_cpu = seq
-      end do
-    end if
+    ! distribute energy grid
+    do i = 0, Npoints-1
+       negf%en_grid(i+1)%cpu = mod(i,numprocs)
+    enddo
 
   end subroutine real_axis_int_n_def
 
@@ -1339,37 +1267,15 @@ contains
   subroutine real_axis_int_p_def(negf)
     type(Tnegf) :: negf
 
-    integer :: i, i1, np, ioffset, ncont, Npoints
-    real(dp), DIMENSION(:), allocatable :: wght, pnts
-    real(dp) :: Omega, mumin, wqmax, Emax
-    integer, allocatable :: seq(:)
-    real(dp), dimension(:), allocatable :: Ef_i  ! Intrinsic Fermi level
+    integer :: i, ioffset, ncont, Npoints
+    real(dp), DIMENSION(:), allocatable :: wght,pnts   ! Gauss-quadrature points
+    real(dp) :: Omega, mumin, Emax, muref, ff, kbT
 
     ncont = negf%str%num_conts
-    Npoints = negf%Np_real
-
-    if (.not. allocated(negf%Ef_i)) then
-      stop "Error: in real_axis_int_p_def: Intrinsic Fermi level Ef_i was not set before calling integration"
-    endif
-
-    allocate(Efi(len(negf%Ef_i)))
-    Ef_i = negf%Ef_i
-
-    ! With inelastic scattering equalize the energy points/process
-    if (negf%interactList%counter /= 0) then
-      if (mod(Npoints,numprocs) .ne. 0) then
-        do while (mod(Npoints,numprocs) .ne. 0)
-          Npoints = Npoints + 1
-        end do
-        negf%Np_real = Npoints
-      end if
-    end if
-
-    ! Get maximum wq for inelastic interactions
-    wqmax = get_max_wq(negf%interactList)
-
-    ! Omega considers maximum kT so interval is always large enough
-    Omega = negf%n_kt * maxval(negf%cont(:)%kbT_dm) + wqmax
+    ioffset = negf%Np_n(1) + negf%Np_n(2) + negf%n_poles
+    kbT = maxval(negf%cont(:)%kbT_dm)
+    Omega = negf%n_kt * kbT
+    muref = negf%muref
 
     if (ncont.gt.0) then
        mumin=minval(negf%cont(:)%mu_p)
@@ -1377,62 +1283,35 @@ contains
        mumin=negf%muref
     endif
 
-    ! Balance N points over the energy grid
-    if (mod(Npoints,numprocs) .ne. 0) then
-      do while (mod(Npoints,numprocs) .ne. 0)
-        Npoints = Npoints + 1
-      end do
-    end if
-
-    !! destroy en_grid from previous calculation, if any
+    Npoints = negf%Np_real
     call destroy_en_grid(negf%en_grid)
     allocate(negf%en_grid(Npoints))
 
     allocate(pnts(Npoints))
     allocate(wght(Npoints))
 
-    Emax = max(Ef_i) + negf%DeltaEv
-    call trapez(mumin-Omega, Emax, pnts, wght, Npoints)
-    ioffset = negf%Np_n(1) + negf%Np_n(2) + negf%n_poles
+    Emax = negf%Ev+negf%DeltaEv
 
+    call trapez(mumin-Omega, Emax, pnts, wght, Npoints)
 
     do i = 1, Npoints
        negf%en_grid(i)%path = 1
        negf%en_grid(i)%pt = i
        negf%en_grid(i)%pt_path = ioffset + i
        negf%en_grid(i)%Ec = cmplx(pnts(i),negf%delta,dp)
-       negf%en_grid(i)%wght = negf%g_spin * wght(i)/(2.0_dp *pi)
+
+       !IMPORTANT: there is no fermi function multiplied in negf%en_grid(i)%wght anymore,
+       !so we cannot use this routine in combination with contour_int
+       negf%en_grid(i)%wght = negf%g_spin * wght(i) / (2.d0 * pi)
     enddo
 
     deallocate(wght)
     deallocate(pnts)
-    deallocate(Ef_i)
 
-    np=Npoints/numprocs
-    if (id .ne. numprocs-1) then
-      negf%local_en_points = np
-    else
-      negf%local_en_points = np + mod(Npoints,numprocs)
-    end if
-
-    if (wqmax == 0.0_dp) then
-      ! distribute energy grid round robin scheme:
-      !     0 1 2 3 ... 0 1 2 .... 0 1 2 ....
-      do i = 0, Npoints-1
-        negf%en_grid(i+1)%cpu = mod(i,numprocs)
-      enddo
-    else
-      ! With inelastic points must be contigous
-      !    0 0 0 0 ... 1 1 1 .... 2 2 2 ....
-      allocate(seq(np))
-      do i1 = 1, np
-        seq(i1) = i1
-      end do
-      do i = 0, numprocs-1
-        negf%en_grid(i*np+1:(i+1)*np)%cpu = i
-        negf%en_grid(i*np+1:(i+1)*np)%pt_cpu = seq
-      end do
-    end if
+    ! distribute energy grid
+    do i = 0, Npoints-1
+       negf%en_grid(i+1)%cpu = mod(i,numprocs)
+    enddo
 
   end subroutine real_axis_int_p_def
 
@@ -1967,6 +1846,8 @@ contains
     !real(dp) :: scba_elastic_error, scba_inelastic_error, scba_elastic_tol
     real(dp) :: scba_inelastic_error
     real(dp), dimension(:), allocatable :: curr_mat, ldos_mat, frm
+    real(dp), dimension(:), allocatable :: tmp_currents
+    real(dp), dimension(:,:), allocatable :: tmp_ldos_mat
     complex(dp), DIMENSION(:), allocatable :: diag
     complex(dp) :: Ec, zt
     type(z_CSR) :: G, TmpMt
@@ -2006,12 +1887,6 @@ contains
       call write_info_parallel(negf%verbose,30,'CALCULATION OF LAYER CURRENTS; Npoints=',Npoints)
     end if
 
-    !if (id0) then
-    !  do iK = 1, size(negf%local_k_index)
-    !    negf%iKpoint = negf%local_k_index(iK) ! global k index
-    !    print*,'cpu',negf%kComm%rank,':  k=',negf%kpoints(:,negf%iKpoint)
-    !  end do
-    !end if
     ! ---------------------------------------------------------------------
     ! SCBA Iteration
     ! ---------------------------------------------------------------------
@@ -2103,22 +1978,28 @@ contains
 
 #:if defined("MPI")
       if (id0.and.negf%verbose.gt.VBT) call message_clock('Gather MPI results ')
-      print*, ""
-      print*, "negf%energyComm:", negf%energyComm
-      print*, "negf%energyComm%rank:", negf%energyComm%rank
-      print*, "negf%energyComm%leadrank:", negf%energyComm%leadrank
-      print*, "negf%energyComm%size:", negf%energyComm%size
-      print*, ""
-      print*, "DEBUG: currents before energy reduce: "
-      print*, negf%currents
-      call mpifx_reduceip(negf%energyComm, negf%currents, MPI_SUM)
-      print*, "DEBUG: currents after energy reduce: "
-      print*, negf%currents
-      call mpifx_reduceip(negf%kComm, negf%currents, MPI_SUM)
-      print*, "DEBUG: currents after k reduce"
-      call mpifx_reduceip(negf%energyComm, negf%ldos_mat, MPI_SUM)
-      call mpifx_reduceip(negf%kComm, negf%ldos_mat, MPI_SUM)
+      
+      allocate(tmp_currents, mold=negf%currents)
+      allocate(tmp_ldos_mat, mold=negf%ldos_mat)
+      
+      ! Work around because of MPI error with TiberCAD (MPI_IN_PLACE flag is not recognized)
+      tmp_currents = 0.0_dp
+      call mpifx_reduce(negf%energyComm, negf%currents, tmp_currents, MPI_SUM)
+      negf%currents = tmp_currents
+      tmp_currents = 0.0_dp
+      call mpifx_reduce(negf%kComm, negf%currents, tmp_currents, MPI_SUM)
+      negf%currents = tmp_currents
+      
+      tmp_ldos_mat = 0.0_dp
+      call mpifx_reduce(negf%energyComm, negf%ldos_mat, tmp_ldos_mat, MPI_SUM)
+      negf%ldos_mat = tmp_ldos_mat
+      tmp_ldos_mat = 0.0_dp
+      call mpifx_reduce(negf%kComm, negf%ldos_mat, tmp_ldos_mat, MPI_SUM)
       if (id0.and.negf%verbose.gt.VBT) call write_clock
+      negf%ldos_mat = tmp_ldos_mat
+
+      deallocate(tmp_currents)
+      deallocate(tmp_ldos_mat)
 #:endif
 
       !Check SCBA convergence on layer currents.
@@ -2161,7 +2042,12 @@ contains
       class is(ElPhonInel)
         deltaE = real(negf%en_grid(2)%Ec - negf%en_grid(1)%Ec)
         call pInter%set_EnGrid(deltaE, size(negf%en_grid), negf%local_en_points)
-        call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index)
+        if (allocated(negf%equivalent_kpoints)) then
+          call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index, negf%equivalent_kpoints)
+        else
+          call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index)
+        endif
+        call pInter%set_structure(negf%str)
         call pInter%prepare()
       end select
       it => it%next
@@ -2196,10 +2082,10 @@ contains
     do while (associated(it))
       select type(pInter => it%inter)
       class is (TInelastic)
-        call it%inter%destroy_Sigma_n()
-        call it%inter%compute_Sigma_n(spin=negf%spin)
-        call it%inter%destroy_Sigma_r()
-        call it%inter%compute_Sigma_r(spin=negf%spin)
+        call pInter%destroy_Sigma_n()
+        call pInter%compute_Sigma_n(spin=negf%spin)
+        call pInter%destroy_Sigma_r()
+        call pInter%compute_Sigma_r(spin=negf%spin)
       end select
       it => it%next
     end do
@@ -2215,8 +2101,8 @@ contains
     do while (associated(it))
       select type(pInter => it%inter)
       class is (TElastic)
-        call it%inter%compute_Sigma_r(spin=negf%spin)
-        call it%inter%compute_Sigma_n(spin=negf%spin)
+        call pInter%compute_Sigma_r(spin=negf%spin)
+        call pInter%compute_Sigma_n(spin=negf%spin)
       end select
       it => it%next
     end do

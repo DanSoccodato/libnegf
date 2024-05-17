@@ -232,12 +232,11 @@ contains
 
     integer :: ierr
 
-    !print*,"Init "//trim(this%tagname), allocated(this%MatArray)
     if (allocated(this%MatArray)) then
       if (size(this%MatArray) /= NE*Nk*NPL*Ndiag*Nspin) then   
-        call mem_destroy(this)
+        call this%destroy()
       end if  
-    end if  
+    end if
     if (.not.allocated(this%MatArray)) then
       allocate(this%MatArray(NE,Nk,NPL*Ndiag,Nspin), stat=ierr)
       if (ierr /= 0) then    

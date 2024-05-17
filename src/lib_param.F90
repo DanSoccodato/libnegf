@@ -171,9 +171,6 @@ module lib_param
 
     !Particle info for holes/electrons integration
     integer :: particle
-    ! Flag to determine whether the density integration in E-domain has to be performed on intervals that depend on the
-    ! z-coordinate. Used for holes/electrons integrations
-    logical :: en_z_dependence
 
     !! Emitter and collector for transmission or Meir-Wingreen
     !! (only emitter in this case)
@@ -288,9 +285,6 @@ module lib_param
     class(TMatrixCache), pointer :: G_r => null()
     class(TMatrixCache), pointer :: G_n => null()
 
-    ! Intrinsic Fermi level
-    real(dp), dimension(:), allocatable :: Ef_i 
-
     contains
 
     !procedure :: set_defaults => set_defaults
@@ -396,7 +390,7 @@ contains
     select type(pInter => node%inter)
     type is(ElPhonPolarOptical)
 #:if defined("MPI")
-      call ElPhonPO_init(pInter, negf%cartComm%id, negf%str, negf%basis, coupling, &
+      call ElPhonPO_init(pInter, negf%cartComm%comm, negf%str, negf%basis, coupling, &
           &  wq, Temp, dz, eps0, eps_inf, q0, area, niter, tridiag)
 #:else
       stop "Inelastic scattering requires MPI"
@@ -425,7 +419,7 @@ contains
     select type(pInter => node%inter)
     type is(ElPhonNonPolarOptical)
 #:if defined("MPI")
-    call ElPhonNonPO_init(pInter, negf%cartComm%id, negf%str, negf%basis, coupling, &
+    call ElPhonNonPO_init(pInter, negf%cartComm%comm, negf%str, negf%basis, coupling, &
             &  wq, Temp, dz, D0, area, niter, tridiag)
 #:else
       stop "Inelastic scattering requires MPI"
@@ -534,7 +528,6 @@ contains
      negf%scba_inelastic_tol = 1.d-7
      negf%ndos_proj = 0
      negf%particle = 1       ! Used for setting correct fermi function in real_axis_int. Can become -1 only in compute_density_efa
-     negf%en_z_dependence = .false.    ! Used for triggering integration on z-dependent energy domain
 
      negf%surface_green_cache = TMatrixCacheDisk(scratch_path=negf%scratch_path)
 

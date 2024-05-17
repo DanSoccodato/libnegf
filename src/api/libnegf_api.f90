@@ -406,18 +406,20 @@ subroutine negf_create_hs(handler, nHk) bind(C)
 end subroutine negf_create_hs
 
 !!* Passing fortran style mpi communicator.
-subroutine negf_set_mpi_fcomm(comm) bind(C)
-  use mpi_globals, only: test_bare_reduce ! if:mod:use
+!!* @param  handler The handler to this negf instance.
+subroutine negf_set_mpi_fcomm(handler, comm) bind(C)
+  use libnegfAPICommon  ! if:mod:use
+  use libnegf           ! if:mod:use
+  use ln_precision      ! if:mod:use
   implicit none
+  integer :: handler(DAC_handlerSize)  ! if:var:in
   integer, intent(in), value :: comm !if:var:in
 
-  ! type(NEGFpointers) :: LIB
+  type(NEGFpointers) :: LIB
 
-  ! LIB = transfer(handler, LIB)
-  print*, "INSIDE set_mpi_fcomm"
-  call test_bare_reduce(comm, "api.f90, comm_from_TC")
-  stop
-  ! call set_mpi_bare_comm(LIB%pNEGF, comm)
+  LIB = transfer(handler, LIB)
+
+  call set_mpi_bare_comm(LIB%pNEGF, comm)
 
 end subroutine negf_set_mpi_fcomm
 
@@ -426,8 +428,8 @@ subroutine negf_cartesian_init(handler, in_comm, nk, cart_comm, k_comm) bind(C)
   use iso_c_binding, only : c_int  ! if:mod:use
   use libnegfAPICommon  ! if:mod:use
   use libnegf           ! if:mod:use
-  use mpi_globals, only: test_bare_reduce ! if:mod:use
   use ln_precision      ! if:mod:use
+  use mpi_globals, only: MPI_Comm    ! if:mod:use
   implicit none
   integer :: handler(DAC_handlerSize)            ! if:var:in
   integer(c_int), intent(in), value :: nk      ! if:var:in
@@ -436,10 +438,12 @@ subroutine negf_cartesian_init(handler, in_comm, nk, cart_comm, k_comm) bind(C)
   integer, intent(out) :: k_comm         ! if:var:out
 
   type(NEGFpointers) :: LIB
+  type(MPI_Comm) :: in_comm_f08
 
   LIB = transfer(handler, LIB)
-  call test_bare_reduce(in_comm, "api.f90, comm_from_TC")
-  call set_cartesian_bare_comms(LIB%pNEGF, in_comm, nk, cart_comm, k_comm)
+  in_comm_f08%MPI_VAL = in_comm
+
+  call set_cartesian_bare_comms(LIB%pNEGF, in_comm_f08, nk, cart_comm, k_comm)
 
 end subroutine negf_cartesian_init
 
@@ -1111,6 +1115,7 @@ subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indice
   LIB = transfer(handler, LIB)
 
   call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0, eqv_points, equiv_mult)
+  ! call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0)!, eqv_points, equiv_mult)
 
 end subroutine negf_set_kpoints
 
@@ -1237,11 +1242,6 @@ subroutine negf_layer_current(handler, nlayers, layer_current) bind(C)
 
   layer_current = LIB%pNEGF%currents
 
-  print*, "DEBUG: inside libnegf_api.f90, layer currents:"
-  do i = 1, size(layer_current,1)
-    print*, layer_current(i)
-  enddo
-
 end subroutine negf_layer_current
 
 
@@ -1280,11 +1280,6 @@ subroutine negf_set_elph_dephasing(handler, coupling, coupling_size, scba_niter)
   allocate(coupling_tmp(coupling_size))
   coupling_tmp(:) = coupling(1:coupling_size)
 
-  ! print*, "DEBUG: diagonal dephasing"
-  ! print*, "Coupling: ", coupling_tmp
-  ! print*, "max_scba_iterations: ", scba_niter
-  ! print*, ""
-
   call set_elph_dephasing(LIB%pNEGF, coupling_tmp, scba_niter)
 
 end subroutine negf_set_elph_dephasing
@@ -1315,12 +1310,6 @@ subroutine negf_set_elph_block_dephasing(handler, coupling, coupling_size, orbsp
   coupling_tmp(:) = coupling(1:coupling_size)
   orbsperatm_tmp(:) = orbsperatm(1:orbsperatm_size)
 
-  ! print*, "DEBUG: diagonal block dephasing"
-  ! print*, "Coupling: ", coupling_tmp
-  ! print*, "orbsperatom", orbsperatm
-  ! print*, "max_scba_iterations: ", scba_niter
-  ! print*, ""
-
   call set_elph_block_dephasing(LIB%pNEGF, coupling_tmp, orbsperatm_tmp, scba_niter)
 
 end subroutine negf_set_elph_block_dephasing
@@ -1350,12 +1339,6 @@ subroutine negf_set_elph_s_dephasing(handler, coupling, coupling_size, orbsperat
   allocate(orbsperatm_tmp(orbsperatm_size))
   coupling_tmp(:) = coupling(1:coupling_size)
   orbsperatm_tmp(:) = orbsperatm(1:orbsperatm_size)
-
-  ! print*, "DEBUG: S dephasing"
-  ! print*, "Coupling: ", coupling_tmp
-  ! print*, "orbsperatom", orbsperatm
-  ! print*, "max_scba_iterations: ", scba_niter
-  ! print*, ""
 
   call set_elph_s_dephasing(LIB%pNEGF, coupling_tmp, orbsperatm_tmp, scba_niter)
 
@@ -1392,19 +1375,6 @@ subroutine negf_set_elph_polaroptical(handler, coup, coup_size, wq, kbT, deltaz,
   coupling_tmp(:) = coup(1:coup_size)
   trid_tmp = logical(trid)
 
-  ! print*, "DEBUG: Polar optical"
-  ! print*, "Coupling: ", coupling_tmp
-  ! print*, "max_scba_iterations: ", scba_niter
-  ! print*, "frequency: ", wq
-  ! print*, "eps_r:", eps_r
-  ! print*, "eps_inf: ", eps_inf
-  ! print*, "q0: ", q0
-  ! print*, "cell area: ", cell_area
-  ! print*, "deltaz: ", deltaz
-  ! print*, "kbt: ", kbt
-  ! print*, "tridiagonal: ", trid_tmp
-  ! print*, ""
-
   call set_elph_polaroptical(LIB%pNEGF, coupling_tmp, wq, kbT, deltaz, eps_r, eps_inf, q0, cell_area, scba_niter, trid_tmp)
 
 end subroutine negf_set_elph_polaroptical
@@ -1437,17 +1407,6 @@ subroutine negf_set_elph_nonpolaroptical(handler, coupling, coup_size, wq, kbT, 
   coupling_tmp(:) = coupling(1:coup_size)
   trid_tmp = logical(trid)
 
-  ! print*, "DEBUG: Non-polar optical"
-  ! print*, "Coupling: ", coupling_tmp
-  ! print*, "max_scba_iterations: ", scba_niter
-  ! print*, "frequency: ", wq
-  ! print*, "q0: ", D0
-  ! print*, "cell area: ", cell_area
-  ! print*, "deltaz: ", deltaz
-  ! print*, "kbt: ", kbt
-  ! print*, "tridiagonal: ", trid_tmp
-  ! print*, ""
-
   call set_elph_nonpolaroptical(LIB%pNEGF, coupling_tmp, wq, kbT, deltaz, D0, cell_area, scba_niter, trid_tmp)
 
 end subroutine negf_set_elph_nonpolaroptical
@@ -1468,9 +1427,6 @@ subroutine negf_set_scba_tolerances(handler, elastic_tol, inelastic_tol) bind(c)
 
   LIB = transfer(handler, LIB)
 
-  ! print*, "DEBUG: "
-  ! print*, "elastic_tol =", elastic_tol
-  ! print*, "inelastic_tol =", inelastic_tol
   call set_scba_tolerances(LIB%pNEGF, elastic_tol, inelastic_tol)
 
 end subroutine negf_set_scba_tolerances

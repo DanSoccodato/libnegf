@@ -22,9 +22,9 @@
 module mpi_globals
 
 #:if defined("MPI")
-  use mpi
+  use mpi_f08
   use omp_lib, only : omp_get_max_threads, omp_get_num_threads
-  use libmpifx_module!, only : mpifx_comm
+  use libmpifx_module, only : mpifx_comm
   use ln_precision
   private
 #:endif
@@ -37,8 +37,8 @@ module mpi_globals
   public :: negf_mpi_init
   public :: negf_cart_init
   public :: check_cart_comm
-  public :: test_mpifx_reduce
   public :: test_bare_reduce
+  public :: MPI_Comm
 
   contains
 
@@ -78,10 +78,10 @@ module mpi_globals
       !> Output communicator for the k sub-grid
       type(mpifx_comm), intent(out) :: kComm
 
-      !> Output communicators of type int for TiberCAD
-      integer, intent(out), optional :: bareCartComm, barekComm
+      !> Output communicators for TiberCAD
+      type(MPI_Comm), intent(out), optional :: bareCartComm, barekComm
 
-      integer :: outComm
+      type(MPI_Comm) :: outComm
       integer :: ndims = 2
       integer :: dims(2)
       logical :: periods(2) = .false.
@@ -100,7 +100,7 @@ module mpi_globals
       dims(1)=nk; dims(2)=nE
       periods(1) = .true.
 
-      call MPI_CART_CREATE(inComm%id, ndims, dims, periods, reorder, outComm, mpierr)
+      call MPI_CART_CREATE(inComm%comm, ndims, dims, periods, reorder, outComm, mpierr)
       call cartComm%init(outComm, mpierr)
       ! Global master id=0 node as writing node
       id0 = (cartComm%rank == 0)
@@ -108,19 +108,15 @@ module mpi_globals
 
       ! Extract sub-communicators
       remain_dims(:) = [.false., .true.]
-      call MPI_CART_SUB(cartComm%id, remain_dims, outComm, mpierr)
+      call MPI_CART_SUB(cartComm%comm, remain_dims, outComm, mpierr)
       call energyComm%init(outComm, mpierr)
       id = energyComm%rank
       numprocs = energyComm%size
 
       remain_dims(:) = [.true., .false.]
-      call MPI_CART_SUB(cartComm%id, remain_dims, outComm, mpierr)
+      call MPI_CART_SUB(cartComm%comm, remain_dims, outComm, mpierr)
       call kComm%init(outComm, mpierr)
       if (present(barekComm)) barekComm = outComm
-
-      ! print*, "DEBUG: inside negf_cart_init: energyComm: ", energyComm
-      ! print*, "DEBUG: inside negf_cart_init: kComm: ", kComm
-      ! print*, "DEBUG: inside negf_cart_init: cartComm: ", cartComm
 
     end subroutine negf_cart_init
 
@@ -134,7 +130,7 @@ module mpi_globals
 
       mpierror = 0
 
-      call MPI_Cart_coords(cartComm%id, 0, 2, coords, mpierror)
+      call MPI_Cart_coords(cartComm%comm, 0, 2, coords, mpierror)
 
     end subroutine check_cart_comm
 
@@ -164,40 +160,15 @@ module mpi_globals
 
    ! end subroutine check_omp_mpi
 
-    subroutine test_mpifx_reduce(inComm, name)
-      type(mpifx_comm), intent(in) :: inComm
-      character(len=*), intent(in) :: name
-
-      real(dp) :: test_array(5)
-      
-      test_array = 1.0_dp
-
-      print*, ""
-      print*, "TEST REDUCE (MPIFX), communicator:", name
-      print*, name, "%id", inComm%id
-      print*, name, "%size", inComm%size
-      print*, name, "%rank", inComm%rank
-      print*, name, "%leadrank", inComm%leadrank
-      print*, name, "%lead", inComm%lead  
-      print*, "Array before calling reduce:"
-      print*, test_array
-      print*, "Calling reduce..."
-      call mpifx_reduceip(inComm, test_array, MPI_SUM)
-      print*, "Array after calling reduce:"
-      print*, test_array
-      print*, "END TEST REDUCE"
-      print*, ""
-
-    end subroutine test_mpifx_reduce
-
 
     subroutine test_bare_reduce(inComm, name)
-      integer, intent(in) :: inComm
+      type(MPI_Comm), intent(in) :: inComm
       character(len=*), intent(in) :: name
 
       integer :: comm_size, rank, root0, error0, error
-      real(dp) :: test_array(5)
+      real(dp) :: test_array(5), target1(5)
       test_array = 1.0_dp
+      target1 = 0.0_dp
 
       root0 = 0
 
@@ -219,11 +190,20 @@ module mpi_globals
       print*, name, "%rank", rank
       print*, "Array before calling reduce:"
       print*, test_array
-      print*, "Calling reduce..."
+      print*, "Calling reduce (not in place)..."
+      call mpi_reduce(test_array, target1, size(test_array), MPI_DOUBLE_PRECISION, MPI_SUM, &
+      &root0, inComm, error0)
+      print*, "test array after calling reduce:"
+      print*, test_array
+      print*, "target:"
+      print*, target1
+      print*, "Calling reduce (in place)..."
       call mpi_reduce(MPI_IN_PLACE, test_array, size(test_array), MPI_DOUBLE_PRECISION, MPI_SUM, &
       &root0, inComm, error0)
-      print*, "Array after calling reduce:"
+      print*, "test array after calling reduce:"
       print*, test_array
+      print*, "MPI_IN_PLACE", MPI_IN_PLACE
+      print*, "ERROR FLAG: ", error0
       print*, "END TEST REDUCE"
       print*, ""
     
