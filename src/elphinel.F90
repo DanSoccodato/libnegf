@@ -733,9 +733,11 @@ contains
     integer, allocatable :: izr(:), izc(:)
     type(TMatLabel) :: label
     logical :: buff
+    integer :: transDir
 
     real(dp) :: maxvalue
 
+    transDir = this%basis%transportDirection
     nbl = this%struct%num_PLs
     NK = size(this%kpoint,2)
     NKloc = size(this%local_kindex)
@@ -773,7 +775,7 @@ contains
       ! Project atom position on the coarser grid
       call log_allocate(izr,Np)
       do ii = 1, Np
-        izr(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+        izr(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
       end do
       label%row_block = ibl
       label%col_block = ibl
@@ -805,7 +807,7 @@ contains
         ! Project atom position on the coarser grid (two indep. arrays for rows and cols)
         call log_allocate(izc,Mp)
         do ii = 1, Mp
-          izc(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+          izc(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
         end do
 
         ! -------------------- supradiagonal blocks -----------------------------------------------------
@@ -948,9 +950,11 @@ contains
     !type(z_DNS) :: Sigma_n
     integer, allocatable :: izr(:), izc(:)
     type(TMatLabel) :: label
+    integer :: transDir
 
     real(dp) :: maxvalue
 
+    transDir = this%basis%transportDirection
     nbl = this%struct%num_PLs
     NK = size(this%kpoint,2)
     NKloc = size(this%local_kindex)
@@ -986,7 +990,7 @@ contains
       ! Project atom position on the coarser grid
       call log_allocate(izr,Np)
       do ii = 1, Np
-        izr(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+        izr(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
       end do
       label%row_block = ibl
       label%col_block = ibl
