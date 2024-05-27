@@ -99,7 +99,7 @@ module elphinel
     procedure :: destroy_sigma_r
     procedure :: destroy_sigma_n
     procedure :: set_kpoints
-    procedure :: set_structure
+    ! procedure :: set_structure
     procedure :: set_EnGrid
     procedure(abstract_prepare), deferred :: prepare
     procedure :: destroy => destroy_elph
@@ -296,13 +296,13 @@ contains
 
   end subroutine set_kpoints
 
-  subroutine set_structure(this, struct)
-    class(ElPhonInel) :: this
-    type(TStruct_Info), intent(in) :: struct
+  ! subroutine set_structure(this, struct)
+  !   class(ElPhonInel) :: this
+  !   type(TStruct_Info), intent(in) :: struct
     
-    this%struct = struct
+  !   this%struct = struct
 
-  end subroutine set_structure
+  ! end subroutine set_structure
 
   !--------------------------------------------------------------------------
   subroutine set_EnGrid(this, deltaE, nE_global, nE_local)
@@ -1015,7 +1015,7 @@ contains
         ! Project atom position on the coarser grid (two indep. arrays for rows and cols)
         call log_allocate(izc,Mp)
         do ii = 1, Mp
-          izc(ii) = nint(this%basis%x(3, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
+          izc(ii) = nint(this%basis%x(transDir, this%basis%matrixToBasis(PL_start+ii-1))/this%dz)
         end do
 
         ! -------------------- supradiagonal blocks -----------------------------------------------------

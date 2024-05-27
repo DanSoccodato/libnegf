@@ -1114,8 +1114,8 @@ subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indice
 
   LIB = transfer(handler, LIB)
 
-  call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0, eqv_points, equiv_mult)
-  ! call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0)!, eqv_points, equiv_mult)
+  ! call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0, eqv_points, equiv_mult)
+  call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0)!, eqv_points, equiv_mult)
 
 end subroutine negf_set_kpoints
 

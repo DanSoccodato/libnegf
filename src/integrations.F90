@@ -1953,7 +1953,10 @@ contains
           if (id0.and.negf%verbose.gt.VBT) call message_clock('Compute Jn,n+1 ')
           call iterative_layer_current(negf, Er, curr_mat, ldos_mat)
           if (id0.and.negf%verbose.gt.VBT) call write_clock
-
+           
+          print*,'currents:'
+          print*,curr_mat
+           
           ! Recursive sum adds up k-dependent partial results
 
           negf%curr_mat(iE,:) = negf%curr_mat(iE,:) + curr_mat(:) * negf%kwght
@@ -2038,6 +2041,7 @@ contains
     it => negf%interactList%first
 
     do while (associated(it))
+      call it%inter%set_structure(negf%str)
       select type(pInter => it%inter)
       class is(ElPhonInel)
         deltaE = real(negf%en_grid(2)%Ec - negf%en_grid(1)%Ec)
@@ -2047,7 +2051,6 @@ contains
         else
           call pInter%set_kpoints(negf%kpoints, negf%kweights, negf%local_k_index)
         endif
-        call pInter%set_structure(negf%str)
         call pInter%prepare()
       end select
       it => it%next
