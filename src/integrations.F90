@@ -1954,8 +1954,8 @@ contains
           call iterative_layer_current(negf, Er, curr_mat, ldos_mat)
           if (id0.and.negf%verbose.gt.VBT) call write_clock
            
-          print*,'currents:'
-          print*,curr_mat
+          ! print*,'currents:'
+          ! print*,curr_mat
            
           ! Recursive sum adds up k-dependent partial results
 

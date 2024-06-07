@@ -1092,8 +1092,10 @@ end subroutine negf_set_kpoint
 !!         m_eq: number of eqv_points, needed to reconstruct the matrix from the 1D array passed from C++
 !!         equiv_mult: the array containing, for each kpoint in `kpoints`, the multiplicity of equivalent points. 
 !!                     Necessary to unpack `eqv_points` and assign them to the corrispective IW kpoint
+!!         set_eq_pts: flag to determine whether the full BZ has been passed, or if eqiuvalent points have to be set together
+!!                     with the reduced BZ
 !!  
-subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indices, n_local, eqv_points, m_eq, equiv_mult) bind(C)
+subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indices, n_local, eqv_points, m_eq, equiv_mult, set_eq_pts) bind(C)
   use iso_c_binding, only : c_int, c_double ! if:mod:use
   use libnegfAPICommon    ! if:mod:use
   use libnegf             ! if:mod:use
@@ -1109,13 +1111,19 @@ subroutine negf_set_kpoints(handler, kpoints, dims, nK, kweights, local_k_indice
   integer(c_int), intent(in), value :: m_eq              !if:var:in
   real(c_double), intent(in) :: eqv_points(dims,m_eq)    !if:var:in
   integer(c_int), intent(in) :: equiv_mult(nK)           !if:var:in
+  integer(c_int), intent(in), value :: set_eq_pts           !if:var:in
 
   type(NEGFpointers) :: LIB
 
   LIB = transfer(handler, LIB)
 
-  ! call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0, eqv_points, equiv_mult)
-  call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0)!, eqv_points, equiv_mult)
+  if (set_eq_pts .eq. 1) then
+    call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0, eqv_points, equiv_mult)
+  else if (set_eq_pts .eq. 0) then
+    call set_kpoints(LIB%pNEGF, kpoints, kweights, local_k_indices, 0)
+  else
+    error stop "In negf_set_k_points: Flag for equivalent points is neither 0 or 1"
+  endif
 
 end subroutine negf_set_kpoints
 

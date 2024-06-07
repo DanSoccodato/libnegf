@@ -256,7 +256,6 @@ contains
             & this%coupling(pl_start + ii - 1)
       end do
     end do
-    print*,'sigma_n: ',maxval(abs(this%sigma_n))
   end subroutine set_Gn
 
   !>  Compute Sigma_r : dummy
